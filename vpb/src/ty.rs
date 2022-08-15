@@ -1,6 +1,6 @@
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, Eq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Kv {
     #[prost(bytes="vec", tag="1")]
     pub key: ::prost::alloc::vec::Vec<u8>,
@@ -50,7 +50,7 @@ pub mod kv {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, Eq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KvList {
     #[prost(message, repeated, tag="1")]
     pub kv: ::prost::alloc::vec::Vec<Kv>,
@@ -60,7 +60,7 @@ pub struct KvList {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, Eq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ManifestChangeSet {
     /// A set of changes that are applied atomically.
     #[prost(message, repeated, tag="1")]
@@ -68,7 +68,7 @@ pub struct ManifestChangeSet {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, Eq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ManifestChange {
     /// Table ID.
     #[prost(uint64, tag="1")]
@@ -111,7 +111,7 @@ pub mod manifest_change {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, Eq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Checksum {
     /// For storing type of Checksum algorithm used
     #[prost(enumeration="ChecksumAlgorithm", tag="1")]
@@ -121,7 +121,7 @@ pub struct Checksum {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, Eq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DataKey {
     #[prost(uint64, tag="1")]
     pub key_id: u64,
@@ -134,7 +134,7 @@ pub struct DataKey {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, Eq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
     #[prost(bytes="vec", tag="1")]
     pub prefix: ::prost::alloc::vec::Vec<u8>,
@@ -144,7 +144,7 @@ pub struct Match {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, Eq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BlockOffset {
     #[prost(bytes="vec", tag="1")]
     pub key: ::prost::alloc::vec::Vec<u8>,
@@ -155,7 +155,7 @@ pub struct BlockOffset {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[derive(Clone, PartialEq, Eq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TableIndex {
     #[prost(message, repeated, tag="1")]
     pub offsets: ::prost::alloc::vec::Vec<BlockOffset>,
