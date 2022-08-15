@@ -1,20 +1,36 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, allow(unused_attributes))]
+extern crate alloc;
+use alloc::vec::Vec;
 
 mod ty;
 pub use ty::{kv::Kind, manifest_change::Operation, *};
 
 pub use prost;
-
-extern crate alloc;
-use alloc::vec::Vec;
-
 pub mod checksum {
+    #[inline]
+    pub fn calculate_checksum(data: &[u8], algorithm: super::ChecksumAlgorithm) -> u64 {
+        match algorithm {
+            #[cfg(any(feature = "crc32", feature = "crc32-std"))]
+            super::ChecksumAlgorithm::Crc32c => crc32(data),
+            #[cfg(any(feature = "xxhash64", feature = "xxhash64-std"))] 
+            super::ChecksumAlgorithm::XxHash64 => xxhash64(data),
+            #[cfg(any(feature = "sea", feature = "sea-std"))]
+            super::ChecksumAlgorithm::SeaHash => sea(data),
+            #[allow(unreachable_patterns)]
+            _ => panic!("Unsupported checksum algorithm: please enable one of checksum algorithm features (crc32, crc32-std, sea, sea-std, xxhash64, xxhash64-std)"),
+        }
+    }
+
     #[cfg(any(feature = "crc32", feature = "crc32-std"))]
+    #[inline]
     pub fn crc32(data: &[u8]) -> u64 {
         crc32fast::hash(data) as u64
     }
 
     #[cfg(any(feature = "sea", feature = "sea-std"))]
+    #[inline]
     pub fn sea(data: &[u8]) -> u64 {
         use core::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
         use lazy_static::lazy_static;
@@ -30,6 +46,7 @@ pub mod checksum {
     }
 
     #[cfg(any(feature = "xxhash64", feature = "xxhash64-std"))]
+    #[inline]
     pub fn xxhash64(data: &[u8]) -> u64 {
         use core::hash::{BuildHasher, Hash, Hasher};
         use lazy_static::lazy_static;
@@ -60,12 +77,23 @@ pub mod checksum {
     }
 }
 
-pub trait Marshaller: prost::Message + Sized + Default {
+pub trait Marshaller {
+    fn marshal(&self) -> Vec<u8>;
+
+    fn unmarshal(data: &[u8]) -> Result<Self, prost::DecodeError>
+    where
+        Self: Sized;
+}
+
+impl<T: prost::Message + Default> Marshaller for T {
     fn marshal(&self) -> Vec<u8> {
         self.encode_to_vec()
     }
 
-    fn unmarshal(data: &[u8]) -> Result<Self, prost::DecodeError> {
+    fn unmarshal(data: &[u8]) -> Result<Self, prost::DecodeError>
+    where
+        Self: Sized,
+    {
         prost::Message::decode(data)
     }
 }
@@ -78,8 +106,6 @@ macro_rules! impl_type {
                     Self::default()
                 }
             }
-
-            impl Marshaller for $ty {}
         )*
     };
 }

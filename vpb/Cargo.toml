@@ -1,9 +1,9 @@
 [package]
 name = "vpb"
-version = "0.0.0"
+version = "0.0.1"
 edition = "2021"
 license = "Apache-2.0/MIT"
-description = "a placeholder"
+description = "key-value proto buffer for veladb"
 
 [features]
 default = ["std"]
@@ -35,3 +35,7 @@ xxhash-rust = { version = "0.8", optional = true, default-features = false }
 
 [build-dependencies]
 prost-build = "0.11"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
