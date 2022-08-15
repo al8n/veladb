@@ -10,7 +10,7 @@ pub use ty::{kv::Kind, manifest_change::Operation, *};
 pub use prost;
 pub mod checksum {
     #[inline]
-    pub fn calculate_checksum(data: &[u8], algorithm: super::ChecksumAlgorithm) -> u64 {
+    pub fn calculate_checksum(_data: &[u8], algorithm: super::ChecksumAlgorithm) -> u64 {
         match algorithm {
             #[cfg(any(feature = "crc32", feature = "crc32-std"))]
             super::ChecksumAlgorithm::Crc32c => crc32(data),
