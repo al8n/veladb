@@ -1,15 +1,19 @@
 [package]
 name = "vpb"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 license = "Apache-2.0/MIT"
 description = "key-value proto buffer for veladb"
 
 [features]
 default = ["std"]
-full = ["sea-std", "xxhash64-std", "crc32-std"]
+full = ["sea-std", "xxhash64-std", "crc32-std", "encryption-std"]
 std = ["prost/std", "serde/std"]
 js = ["getrandom/js"]
+
+# enable encryption
+encryption = ["aes/zeroize", "ctr/zeroize", "rand"]
+encryption-std = ["encryption", "ctr/std", "rand/default"]
 
 # enable seahash checksum
 sea = ["seahash", "lazy_static"]
@@ -24,6 +28,8 @@ crc32 = ["crc32fast"]
 crc32-std = ["crc32fast/std"]
 
 [dependencies]
+aes = { version = "0.8", optional = true }
+ctr = { version = "0.9", optional = true }
 crc32fast = { version = "1.3", optional = true, default-features = false }
 getrandom = { version = "0.2", optional = true }
 lazy_static = { version = "1.4", optional = true }
