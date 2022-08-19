@@ -1,0 +1,10 @@
+[package]
+name = "bable"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0/MIT"
+description = "(WIP) badger's sstable implementation"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]

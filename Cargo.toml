@@ -1,6 +1,7 @@
 [workspace]
 members = [
+  "bable",
   "vpb",
-  "vela-core",
+  "core",
   "wisc"
 ]
