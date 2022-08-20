@@ -75,6 +75,28 @@ enum ChecksumAlgorithm {
   SeaHash = 2;
 }
 
+// CompressionAlgorithm specifies to use which algorithm to compress a block.
+enum CompressionAlgorithm {
+  // None mode indicates that a block is not compressed.
+  None = 0;
+  // Snappy mode indicates that a block is compressed using Snappy algorithm.
+  Snappy = 1;
+
+  // ZSTD mode indicates that a block is compressed using ZSTD algorithm.
+  // ZSTD,
+  Zstd = 2;
+
+  // Lz4 mode indicates that a block is compressed using Snappy algorithm. 
+  Lz4 = 3;
+}
+
+// Compression specifies how a block should be compressed.
+message Compression {
+  // compression algorithm
+  CompressionAlgorithm algo = 1;
+  int32 level = 2; // only for zstd
+}
+
 message Checksum {
   ChecksumAlgorithm algo = 1; // For storing type of Checksum algorithm used
   uint64 sum = 2;

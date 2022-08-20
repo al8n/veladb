@@ -9,7 +9,229 @@ pub use ty::{kv::Kind, manifest_change::Operation, *};
 
 pub use prost;
 
+/// Compression
+pub mod compression {
+    use alloc::vec::Vec;
+
+    impl Copy for super::Compression {}
+
+    #[derive(Debug)]
+    pub struct Compression {
+        pub algo: super::CompressionAlgorithm,
+        pub level: i32,
+    }
+
+    impl Compression {
+        pub const fn new() -> Self {
+            Self {
+                algo: super::CompressionAlgorithm::None,
+                level: 0,
+            }
+        }
+
+        const fn to_pb_type(&self) -> super::Compression {
+            super::Compression {
+                algo: self.algo as i32,
+                level: self.level,
+            }
+        }
+    }
+
+    impl prost::Message for Compression {
+        fn encode_raw<B>(&self, buf: &mut B)
+        where
+            B: prost::bytes::BufMut,
+            Self: Sized,
+        {
+            self.to_pb_type().encode_raw(buf)
+        }
+
+        fn merge_field<B>(
+            &mut self,
+            tag: u32,
+            wire_type: prost::encoding::WireType,
+            buf: &mut B,
+            ctx: prost::encoding::DecodeContext,
+        ) -> Result<(), prost::DecodeError>
+        where
+            B: prost::bytes::Buf,
+            Self: Sized,
+        {
+            self.to_pb_type().merge_field(tag, wire_type, buf, ctx)
+        }
+
+        fn encoded_len(&self) -> usize {
+            self.to_pb_type().encoded_len()
+        }
+
+        fn clear(&mut self) {
+            self.to_pb_type().clear()
+        }
+    }
+
+    #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+    pub enum Error {
+        /// The data is too large to be compressed.
+        Oversize(u64),
+        InvalidFormat,
+    }
+
+    impl core::fmt::Debug for Error {
+        fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+            match self {
+                Error::Oversize(size) => write!(f, "Error::Oversize({size})"),
+                Error::InvalidFormat => write!(f, "Error::InvalidFormat"),
+            }
+        }
+    }
+
+    impl core::fmt::Display for Error {
+        fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+            match self {
+                Error::Oversize(size) => {
+                    write!(f, "The total number of bytes to compress exceeds {size}.")
+                }
+                Error::InvalidFormat => write!(f, "The data is not in the correct format."),
+            }
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl std::error::Error for Error {}
+
+    pub trait Compressor {
+        #[inline]
+        fn compress_into_vec(&self, cmp: Compression) -> Result<Vec<u8>, Error>
+        where
+            Self: AsRef<[u8]>,
+        {
+            compress_into_vec(self.as_ref(), cmp)
+        }
+
+        #[inline]
+        fn decompress_into_vec(&self, cmp: Compression) -> Result<Vec<u8>, Error>
+        where
+            Self: AsRef<[u8]>,
+        {
+            decompress_into_vec(self.as_ref(), cmp)
+        }
+
+        #[inline]
+        fn max_encoded_len(&self, cmp: Compression) -> usize
+        where
+            Self: AsRef<[u8]>,
+        {
+            max_encoded_len(self.as_ref(), cmp)
+        }
+    }
+
+    impl<T: AsRef<[u8]>> Compressor for T {}
+
+    #[inline]
+    pub fn compress_into_vec(data: &[u8], cmp: Compression) -> Result<Vec<u8>, Error> {
+        match cmp.algo {
+            super::CompressionAlgorithm::None => Ok(data.to_vec()),
+            #[cfg(feature = "snappy")]
+            super::CompressionAlgorithm::Snappy => snap::raw::Encoder::new()
+                .compress_vec(data)
+                .map_err(|_| Error::Oversize((2 ^ 32) - 1)),
+            #[cfg(feature = "zstd")]
+            super::CompressionAlgorithm::Zstd => {
+                let range = zstd_compression::compression_level_range();
+                match cmp.level {
+                    lvl if range.contains(&lvl) => zstd_compression::encode_all(data, lvl),
+                    lvl if lvl <= 0 => Ok(data.to_vec()),
+                    _ => zstd_compression::encode_all(data, range.last().unwrap()),
+                }
+                .map_err(|_| Error::InvalidFormat)
+            }
+            #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+            super::CompressionAlgorithm::Lz4 => Ok(lz4_flex::compress_prepend_size(data)),
+        }
+    }
+
+    #[inline]
+    pub fn decompress_into_vec(data: &[u8], cmp: Compression) -> Result<Vec<u8>, Error> {
+        match cmp.algo {
+            super::CompressionAlgorithm::None => Ok(data.to_vec()),
+            #[cfg(feature = "snappy")]
+            super::CompressionAlgorithm::Snappy => {
+                snap::raw::Decoder::new().decompress_vec(data).map_err(|e| {
+                    // TODO: Polish error handle
+                    match e {
+                        snap::Error::TooBig { .. } => Error::Oversize((2 ^ 32) - 1),
+                        _ => Error::InvalidFormat,
+                    }
+                })
+            }
+            #[cfg(feature = "zstd")]
+            super::CompressionAlgorithm::Zstd => {
+                let range = zstd_compression::compression_level_range();
+                match cmp.level {
+                    v if range.contains(&v) => zstd_compression::decode_all(data),
+                    v if v <= 0 => Ok(data.to_vec()),
+                    _ => zstd_compression::decode_all(data),
+                }
+                .map_err(|_| Error::InvalidFormat)
+            }
+            #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+            super::CompressionAlgorithm::Lz4 => {
+                lz4_flex::decompress_size_prepended(data).map_err(|_| Error::InvalidFormat)
+            }
+        }
+    }
+
+    #[inline]
+    pub fn max_encoded_len(data: &[u8], cmp: Compression) -> usize {
+        match cmp.algo {
+            super::CompressionAlgorithm::None => data.len(),
+            #[cfg(feature = "snappy")]
+            super::CompressionAlgorithm::Snappy => snap::raw::max_compress_len(data.len()),
+            #[cfg(feature = "zstd")]
+            super::CompressionAlgorithm::Zstd => {
+                let low_limit = 128 << 10; // 128 kb
+                let src_size = data.len();
+                let margin = if src_size < low_limit {
+                    (low_limit - src_size) >> 11
+                } else {
+                    0
+                };
+                src_size + (src_size >> 8) + margin
+            }
+            #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+            super::CompressionAlgorithm::Lz4 => {
+                lz4_flex::block::get_maximum_output_size(data.len())
+            }
+        }
+    }
+
+    macro_rules! impl_compression_algo_converter {
+        ($($ty:ty),+ $(,)?) => {
+            $(
+                impl From<$ty> for super::CompressionAlgorithm {
+                    fn from(val: $ty) -> super::CompressionAlgorithm {
+                        match val {
+                            #[cfg(feature = "snappy")]
+                            1 => super::CompressionAlgorithm::Snappy,
+                            #[cfg(feature = "zstd")]
+                            2 => super::CompressionAlgorithm::Zstd,
+                            _ => super::CompressionAlgorithm::None,
+                        }
+                    }
+                }
+            )*
+        };
+    }
+
+    impl_compression_algo_converter!(
+        i8, i16, i32, i64, isize, i128, u8, u16, u32, u64, usize, u128
+    );
+}
+
 /// Encryption/Decryption
+#[cfg(feature = "encryption")]
+pub use ty::EncryptionAlgorithm;
+
 #[cfg(feature = "encryption")]
 pub mod encrypt {
     use aes::cipher::{KeyIvInit, StreamCipher};
@@ -54,7 +276,7 @@ pub mod encrypt {
     impl std::error::Error for EncryptError {}
 
     /// AES encryption extensions
-    pub trait EncryptExt: AsMut<[u8]> + AsRef<[u8]> {
+    pub trait Encryptor: AsMut<[u8]> + AsRef<[u8]> {
         /// Encrypts self with IV.
         /// Can be used for both encryption and decryption. IV is of
         /// AES block size.
@@ -80,7 +302,7 @@ pub mod encrypt {
         }
     }
 
-    impl<T: AsMut<[u8]> + AsRef<[u8]>> EncryptExt for T {}
+    impl<T: AsMut<[u8]> + AsRef<[u8]>> Encryptor for T {}
 
     /// Encrypts data with IV.
     /// Can be used for both encryption and decryption. IV is of
@@ -156,6 +378,43 @@ pub mod encrypt {
         }
     }
 
+    #[derive(Copy, Clone, Default, Eq, PartialEq, Hash)]
+    pub struct InvalidEncryptionAlgorithm;
+
+    impl core::fmt::Debug for InvalidEncryptionAlgorithm {
+        fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+            write!(f, "invalid encryption algorithm")
+        }
+    }
+
+    impl core::fmt::Display for InvalidEncryptionAlgorithm {
+        fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+            write!(f, "invalid encryption algorithm")
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl std::error::Error for InvalidEncryptionAlgorithm {}
+
+    macro_rules! impl_encryption_algo_converter {
+        ($($ty:ty),+ $(,)?) => {
+            $(
+                impl TryFrom<$ty> for super::EncryptionAlgorithm {
+                    type Error = InvalidEncryptionAlgorithm;
+
+                    fn try_from(val: $ty) -> Result<super::EncryptionAlgorithm, InvalidEncryptionAlgorithm> {
+                        match val {
+                            0 => Ok(super::EncryptionAlgorithm::Aes),
+                            _ => Err(InvalidEncryptionAlgorithm),
+                        }
+                    }
+                }
+            )*
+        };
+    }
+
+    impl_encryption_algo_converter!(i8, i16, i32, i64, isize, i128, u8, u16, u32, u64, usize, u128);
+
     #[cfg(test)]
     mod test {
         use super::*;
@@ -180,54 +439,120 @@ pub mod encrypt {
 }
 
 /// Checksum calculation.
+#[cfg(any(
+    feature = "crc32",
+    feature = "crc32-std",
+    feature = "xxhash64",
+    feature = "xxhash64-std",
+    feature = "sea",
+    feature = "sea-std"
+))]
+pub use ty::{Checksum, ChecksumAlgorithm};
+
+#[cfg(any(
+    feature = "crc32",
+    feature = "crc32-std",
+    feature = "xxhash64",
+    feature = "xxhash64-std",
+    feature = "sea",
+    feature = "sea-std"
+))]
 pub mod checksum {
+    impl Copy for super::Checksum {}
+
+    #[derive(Copy, Clone, Default, Eq, PartialEq, Hash)]
+    pub struct InvalidChecksumAlgorithm;
+
+    impl core::fmt::Debug for InvalidChecksumAlgorithm {
+        fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+            write!(f, "invalid checksum algorithm")
+        }
+    }
+
+    impl core::fmt::Display for InvalidChecksumAlgorithm {
+        fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+            write!(f, "invalid checksum algorithm")
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl std::error::Error for InvalidChecksumAlgorithm {}
+
+    macro_rules! impl_checksum_algorithm_converter {
+        ($($ty:ty),+ $(,)?) => {
+            $(
+                impl TryFrom<$ty> for super::ChecksumAlgorithm {
+                    type Error = InvalidChecksumAlgorithm;
+
+                    fn try_from(val: $ty) -> Result<super::ChecksumAlgorithm, InvalidChecksumAlgorithm> {
+                        match val {
+                            0 => Ok(super::ChecksumAlgorithm::Crc32c),
+                            1 => Ok(super::ChecksumAlgorithm::XxHash64),
+                            2 => Ok(super::ChecksumAlgorithm::SeaHash),
+                            _ => Err(InvalidChecksumAlgorithm),
+                        }
+                    }
+                }
+            )*
+        };
+    }
+
+    impl_checksum_algorithm_converter!(
+        i8, i16, i32, i64, isize, i128, u8, u16, u32, u64, usize, u128
+    );
+
+    pub trait Checksumer {
+        /// Calculates checksum of `data`.
+        fn checksum(&self, algorithm: super::ChecksumAlgorithm) -> super::Checksum
+        where
+            Self: AsRef<[u8]>,
+        {
+            calculate_checksum(self.as_ref(), algorithm)
+        }
+
+        fn verify_checksum(&self, expected: u64, algo: super::ChecksumAlgorithm) -> bool
+        where
+            Self: AsRef<[u8]>,
+        {
+            verify_checksum(self.as_ref(), expected, algo)
+        }
+    }
+
+    impl<T: AsRef<[u8]>> Checksumer for T {}
+
     /// Calculates checksum for data using ct checksum type.
     #[inline]
-    pub fn calculate_checksum(data: &[u8], algorithm: super::ChecksumAlgorithm) -> u64 {
+    pub fn calculate_checksum(data: &[u8], algorithm: super::ChecksumAlgorithm) -> super::Checksum {
         match algorithm {
             #[cfg(any(feature = "crc32", feature = "crc32-std"))]
             super::ChecksumAlgorithm::Crc32c => crc32(data),
-            #[cfg(any(feature = "xxhash64", feature = "xxhash64-std"))] 
+            #[cfg(any(feature = "xxhash64", feature = "xxhash64-std"))]
             super::ChecksumAlgorithm::XxHash64 => xxhash64(data),
             #[cfg(any(feature = "sea", feature = "sea-std"))]
             super::ChecksumAlgorithm::SeaHash => sea(data),
-            #[allow(unreachable_patterns)]
-            _ => panic!("Unsupported checksum algorithm: please enable one of checksum algorithm features (crc32, crc32-std, sea, sea-std, xxhash64, xxhash64-std)"),
         }
     }
 
     /// Validates the checksum for the data against the given expected checksum.
     #[inline]
-    pub fn verify_checksum(
-        data: &[u8],
-        expected: super::Checksum,
-    ) -> Result<bool, super::InvalidChecksumAlgorithm> {
-        super::ChecksumAlgorithm::try_from(expected.algo)
-            .map(|algo| calculate_checksum(data, algo) == expected.sum)
-    }
-
-    /// Validates the checksum for the data against the given expected checksum.
-    ///
-    /// # Panic
-    /// The algorithm is not one of the supported checksum algorithms.
-    #[inline]
-    pub fn verify_checksum_unchecked(data: &[u8], expected: super::Checksum) -> bool {
-        let algo =
-            super::ChecksumAlgorithm::try_from(expected.algo).expect("Invalid checksum algorithm");
-        calculate_checksum(data, algo) == expected.sum
+    pub fn verify_checksum(data: &[u8], expected: u64, algo: super::ChecksumAlgorithm) -> bool {
+        calculate_checksum(data, algo).sum == expected
     }
 
     /// Calculate crc32 checksum
     #[cfg(any(feature = "crc32", feature = "crc32-std"))]
     #[inline]
-    pub fn crc32(data: &[u8]) -> u64 {
-        crc32fast::hash(data) as u64
+    pub fn crc32(data: &[u8]) -> super::Checksum {
+        super::Checksum {
+            algo: super::ChecksumAlgorithm::Crc32c as i32,
+            sum: crc32fast::hash(data) as u64,
+        }
     }
 
     /// Calculate sea hash checksum
     #[cfg(any(feature = "sea", feature = "sea-std"))]
     #[inline]
-    pub fn sea(data: &[u8]) -> u64 {
+    pub fn sea(data: &[u8]) -> super::Checksum {
         use core::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
         use lazy_static::lazy_static;
 
@@ -238,13 +563,17 @@ pub mod checksum {
 
         let mut h = SEA.build_hasher();
         data.hash(&mut h);
-        h.finish()
+
+        super::Checksum {
+            algo: super::ChecksumAlgorithm::SeaHash as i32,
+            sum: h.finish(),
+        }
     }
 
     /// Calculate xxhash64 checksum
     #[cfg(any(feature = "xxhash64", feature = "xxhash64-std"))]
     #[inline]
-    pub fn xxhash64(data: &[u8]) -> u64 {
+    pub fn xxhash64(data: &[u8]) -> super::Checksum {
         use core::hash::{BuildHasher, Hash, Hasher};
         use lazy_static::lazy_static;
 
@@ -270,7 +599,10 @@ pub mod checksum {
 
         let mut h = XXH64.build_hasher();
         data.hash(&mut h);
-        h.finish()
+        super::Checksum {
+            algo: super::ChecksumAlgorithm::XxHash64 as i32,
+            sum: h.finish(),
+        }
     }
 }
 
@@ -310,45 +642,6 @@ macro_rules! impl_type {
 impl_type! {
     Checksum, DataKey, ManifestChange, ManifestChangeSet, Match, Kv, KvList, BlockOffset, TableIndex,
 }
-
-#[derive(Copy, Clone, Default, Eq, PartialEq, Hash)]
-pub struct InvalidChecksumAlgorithm;
-
-impl core::fmt::Debug for InvalidChecksumAlgorithm {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "invalid checksum algorithm")
-    }
-}
-
-impl core::fmt::Display for InvalidChecksumAlgorithm {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "invalid checksum algorithm")
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for InvalidChecksumAlgorithm {}
-
-macro_rules! impl_checksum_algorithm_converter {
-    ($($ty:ty),+ $(,)?) => {
-        $(
-            impl TryFrom<$ty> for ChecksumAlgorithm {
-                type Error = InvalidChecksumAlgorithm;
-
-                fn try_from(val: $ty) -> Result<ChecksumAlgorithm, InvalidChecksumAlgorithm> {
-                    match val {
-                        0 => Ok(ChecksumAlgorithm::Crc32c),
-                        1 => Ok(ChecksumAlgorithm::XxHash64),
-                        2 => Ok(ChecksumAlgorithm::SeaHash),
-                        _ => Err(InvalidChecksumAlgorithm),
-                    }
-                }
-            }
-        )*
-    };
-}
-
-impl_checksum_algorithm_converter!(i8, i16, i32, i64, isize, i128, u8, u16, u32, u64, usize, u128);
 
 #[derive(Copy, Clone, Default, Eq, PartialEq, Hash)]
 pub struct InvalidManifestChangeOperation;
@@ -426,43 +719,6 @@ macro_rules! impl_kv_kind_converter {
 }
 
 impl_kv_kind_converter!(i8, i16, i32, i64, isize, i128, u8, u16, u32, u64, usize, u128);
-
-#[derive(Copy, Clone, Default, Eq, PartialEq, Hash)]
-pub struct InvalidEncryptionAlgorithm;
-
-impl core::fmt::Debug for InvalidEncryptionAlgorithm {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "invalid encryption algorithm")
-    }
-}
-
-impl core::fmt::Display for InvalidEncryptionAlgorithm {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "invalid encryption algorithm")
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for InvalidEncryptionAlgorithm {}
-
-macro_rules! impl_encryption_algo_converter {
-    ($($ty:ty),+ $(,)?) => {
-        $(
-            impl TryFrom<$ty> for EncryptionAlgorithm {
-                type Error = InvalidEncryptionAlgorithm;
-
-                fn try_from(val: $ty) -> Result<EncryptionAlgorithm, InvalidEncryptionAlgorithm> {
-                    match val {
-                        0 => Ok(EncryptionAlgorithm::Aes),
-                        _ => Err(InvalidEncryptionAlgorithm),
-                    }
-                }
-            }
-        )*
-    };
-}
-
-impl_encryption_algo_converter!(i8, i16, i32, i64, isize, i128, u8, u16, u32, u64, usize, u128);
 
 impl ManifestChange {
     #[inline]

@@ -3,8 +3,31 @@ name = "bable"
 version = "0.0.0"
 edition = "2021"
 license = "Apache-2.0/MIT"
-description = "(WIP) badger's sstable implementation"
+description = "(WIP) badger's ssttable implementation"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = ["std"]
+std = ["stretto/sync", "zallocator/std", "zallocator/pool", "vpb/std", "kvstructs/std"]
+
+# enable encryption
+encryption = ["vpb/encryption"]
+encryption-std = ["vpb/encryption-std"]
+
+# enable seahash checksum
+sea = ["vpb/sea"]
+sea-std = ["vpb/sea-std"]
+
+# enable xxhash64 checksum
+xxhash64 = ["vpb/xxhash64"]
+xxhash64-std = ["vpb/xxhash64-std"]
+
+# enable crc32 checksum
+crc32 = ["vpb/crc32"]
+crc32-std = ["vpb/crc32-std"]
+
 
 [dependencies]
+kvstructs = { version = "0.0.23", default-features = false }
+stretto = { version = "0.6", optional = true, default-features = false }
+vpb = { path = "../vpb", default-features = false }
+zallocator = { version = "0.1", optional = true, default-features = false }
