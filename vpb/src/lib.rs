@@ -5,20 +5,34 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 mod ty;
-pub use ty::{kv::Kind, manifest_change::Operation, *};
+pub use ty::{
+    kv::Kind, manifest_change::Operation, BlockOffset, CompressionAlgorithm, DataKey, Kv, KvList,
+    ManifestChange, ManifestChangeSet, Match, TableIndex,
+};
 
 pub use prost;
 
 /// Compression
+pub use compression::Compression;
+
 pub mod compression {
     use alloc::vec::Vec;
 
-    impl Copy for super::Compression {}
+    impl Copy for crate::ty::Compression {}
 
+    /// Compression specifies how a block should be compressed.
     #[derive(Debug)]
     pub struct Compression {
-        pub algo: super::CompressionAlgorithm,
+        /// compression algorithm
+        pub algo: crate::ty::CompressionAlgorithm,
+        /// only for zstd, <= 0 use default(3) compression level, 1 - 21 uses the exact level of zstd compression level, >=22 use the largest compression level supported by zstd.
         pub level: i32,
+    }
+
+    impl Default for Compression {
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     impl Compression {
@@ -28,59 +42,111 @@ pub mod compression {
                 level: 0,
             }
         }
-
-        const fn to_pb_type(&self) -> super::Compression {
-            super::Compression {
-                algo: self.algo as i32,
-                level: self.level,
-            }
-        }
     }
 
     impl prost::Message for Compression {
+        #[allow(unused_variables)]
         fn encode_raw<B>(&self, buf: &mut B)
         where
-            B: prost::bytes::BufMut,
-            Self: Sized,
+            B: ::prost::bytes::BufMut,
         {
-            self.to_pb_type().encode_raw(buf)
+            if self.algo != super::CompressionAlgorithm::default() {
+                ::prost::encoding::int32::encode(1u32, &(self.algo as i32), buf);
+            }
+            if self.level != 0i32 {
+                ::prost::encoding::int32::encode(2u32, &self.level, buf);
+            }
         }
 
+        #[allow(unused_variables)]
         fn merge_field<B>(
             &mut self,
             tag: u32,
-            wire_type: prost::encoding::WireType,
+            wire_type: ::prost::encoding::WireType,
             buf: &mut B,
-            ctx: prost::encoding::DecodeContext,
-        ) -> Result<(), prost::DecodeError>
+            ctx: ::prost::encoding::DecodeContext,
+        ) -> ::core::result::Result<(), ::prost::DecodeError>
         where
-            B: prost::bytes::Buf,
-            Self: Sized,
+            B: ::prost::bytes::Buf,
         {
-            self.to_pb_type().merge_field(tag, wire_type, buf, ctx)
+            const STRUCT_NAME: &str = "Compression";
+            match tag {
+                1u32 => {
+                    let value = &mut (self.algo as i32);
+                    ::prost::encoding::int32::merge(wire_type, value, buf, ctx).map_err(
+                        |mut error| {
+                            error.push(STRUCT_NAME, "algo");
+                            error
+                        },
+                    )
+                }
+                2u32 => {
+                    let value = &mut self.level;
+                    ::prost::encoding::int32::merge(wire_type, value, buf, ctx).map_err(
+                        |mut error| {
+                            error.push(STRUCT_NAME, "level");
+                            error
+                        },
+                    )
+                }
+                _ => ::prost::encoding::skip_field(wire_type, tag, buf, ctx),
+            }
         }
 
+        #[inline]
         fn encoded_len(&self) -> usize {
-            self.to_pb_type().encoded_len()
+            (if self.algo != super::CompressionAlgorithm::default() {
+                ::prost::encoding::int32::encoded_len(1u32, &(self.algo as i32))
+            } else {
+                0
+            }) + (if self.level != 0i32 {
+                ::prost::encoding::int32::encoded_len(2u32, &self.level)
+            } else {
+                0
+            })
         }
 
+        #[inline]
         fn clear(&mut self) {
-            self.to_pb_type().clear()
+            self.algo = super::CompressionAlgorithm::default();
+            self.level = 0i32;
         }
     }
 
-    #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+    /// Compression/Decompression Error
     pub enum Error {
-        /// The data is too large to be compressed.
-        Oversize(u64),
-        InvalidFormat,
+        /// Snappy error
+        #[cfg(feature = "snappy")]
+        Snappy(snap::Error),
+        /// Zstd error
+        #[cfg(feature = "zstd")]
+        Zstd(std::io::Error),
+        /// Lz4 error
+        #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+        Lz4(Lz4Error),
+        /// This error occurs when the given buffer is too small to contain the
+        /// maximum possible compressed bytes or the total number of decompressed
+        /// bytes.
+        BufferTooSmall {
+            /// The size of the given output buffer.
+            given: u64,
+            /// The minimum size of the output buffer.
+            min: u64,
+        },
     }
 
     impl core::fmt::Debug for Error {
         fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
             match self {
-                Error::Oversize(size) => write!(f, "Error::Oversize({size})"),
-                Error::InvalidFormat => write!(f, "Error::InvalidFormat"),
+                #[cfg(feature = "snappy")]
+                Error::Snappy(e) => write!(f, "{:?}", e),
+                #[cfg(feature = "zstd")]
+                Error::Zstd(e) => write!(f, "{:?}", e),
+                #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+                Error::Lz4(e) => write!(f, "{:?}", e),
+                Error::BufferTooSmall { given, min } => {
+                    write!(f, "BufferTooSmall {{given {}, min {}}}", given, min)
+                }
             }
         }
     }
@@ -88,10 +154,15 @@ pub mod compression {
     impl core::fmt::Display for Error {
         fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
             match self {
-                Error::Oversize(size) => {
-                    write!(f, "The total number of bytes to compress exceeds {size}.")
+                #[cfg(feature = "snappy")]
+                Error::Snappy(e) => write!(f, "snappy error: {}", e),
+                #[cfg(feature = "zstd")]
+                Error::Zstd(e) => write!(f, "zstd error: {}", e),
+                #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+                Error::Lz4(e) => write!(f, "{}", e),
+                Error::BufferTooSmall { given, min } => {
+                    write!(f, "buffer too small: given {}, min {}", given, min)
                 }
-                Error::InvalidFormat => write!(f, "The data is not in the correct format."),
             }
         }
     }
@@ -99,13 +170,58 @@ pub mod compression {
     #[cfg(feature = "std")]
     impl std::error::Error for Error {}
 
+    #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+    pub enum Lz4Error {
+        Compression(lz4_flex::block::CompressError),
+        Decompression(lz4_flex::block::DecompressError),
+    }
+
+    #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+    impl core::fmt::Debug for Lz4Error {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            match self {
+                Lz4Error::Compression(e) => write!(f, "lz4 error: {:?}", e),
+                Lz4Error::Decompression(e) => write!(f, "lz4 error: {:?}", e),
+            }
+        }
+    }
+
+    #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+    impl core::fmt::Display for Lz4Error {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            match self {
+                Lz4Error::Compression(e) => write!(f, "lz4 error: {}", e),
+                Lz4Error::Decompression(e) => write!(f, "lz4 error: {}", e),
+            }
+        }
+    }
+
+    #[cfg(all(any(feature = "lz4", feature = "lz4-std"), feature = "std"))]
+    impl std::error::Error for Lz4Error {}
+
     pub trait Compressor {
+        #[inline]
+        fn compress_to(&self, dst: &mut [u8], cmp: Compression) -> Result<usize, Error>
+        where
+            Self: AsRef<[u8]>,
+        {
+            compress_to(self.as_ref(), dst, cmp)
+        }
+
         #[inline]
         fn compress_into_vec(&self, cmp: Compression) -> Result<Vec<u8>, Error>
         where
             Self: AsRef<[u8]>,
         {
             compress_into_vec(self.as_ref(), cmp)
+        }
+
+        #[inline]
+        fn decompress_to(&self, dst: &mut [u8], cmp: Compression) -> Result<usize, Error>
+        where
+            Self: AsRef<[u8]>,
+        {
+            decompress_to(self.as_ref(), dst, cmp)
         }
 
         #[inline]
@@ -125,66 +241,122 @@ pub mod compression {
         }
     }
 
-    impl<T: AsRef<[u8]>> Compressor for T {}
+    impl<T> Compressor for T {}
+
+    #[inline]
+    pub fn compress_to(data: &[u8], dst: &mut [u8], cmp: Compression) -> Result<usize, Error> {
+        match cmp.algo {
+            #[cfg(feature = "snappy")]
+            super::CompressionAlgorithm::Snappy => snap::raw::Encoder::new()
+                .compress(data, dst)
+                .map_err(Error::Snappy),
+            #[cfg(feature = "zstd")]
+            super::CompressionAlgorithm::Zstd => {
+                let range = zstd_compression::compression_level_range();
+                match cmp.level {
+                    lvl if range.contains(&lvl) => {
+                        zstd_compression::bulk::compress_to_buffer(data, dst, lvl)
+                            .map_err(Error::Zstd)
+                    }
+                    lvl if lvl <= 0 => zstd_compression::bulk::compress_to_buffer(data, dst, 0)
+                        .map_err(Error::Zstd),
+                    _ => {
+                        zstd_compression::bulk::compress_to_buffer(data, dst, range.last().unwrap())
+                            .map_err(Error::Zstd)
+                    }
+                }
+            }
+            #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+            super::CompressionAlgorithm::Lz4 => lz4_flex::compress_into(data, &mut dst[4..])
+                .map(|size| {
+                    dst[..4].copy_from_slice((size as u32).to_le_bytes().as_ref());
+                    size
+                })
+                .map_err(|e| Error::Lz4(Lz4Error::Compression(e))),
+            _ => {
+                if data.len() > dst.len() {
+                    return Err(Error::BufferTooSmall {
+                        given: dst.len() as u64,
+                        min: data.len() as u64,
+                    });
+                }
+                dst[..data.len()].copy_from_slice(data);
+                Ok(data.len())
+            }
+        }
+    }
 
     #[inline]
     pub fn compress_into_vec(data: &[u8], cmp: Compression) -> Result<Vec<u8>, Error> {
         match cmp.algo {
-            super::CompressionAlgorithm::None => Ok(data.to_vec()),
             #[cfg(feature = "snappy")]
             super::CompressionAlgorithm::Snappy => snap::raw::Encoder::new()
                 .compress_vec(data)
-                .map_err(|_| Error::Oversize((2 ^ 32) - 1)),
+                .map_err(Error::Snappy),
             #[cfg(feature = "zstd")]
             super::CompressionAlgorithm::Zstd => {
                 let range = zstd_compression::compression_level_range();
                 match cmp.level {
                     lvl if range.contains(&lvl) => zstd_compression::encode_all(data, lvl),
-                    lvl if lvl <= 0 => Ok(data.to_vec()),
+                    lvl if lvl <= 0 => zstd_compression::encode_all(data, 0),
                     _ => zstd_compression::encode_all(data, range.last().unwrap()),
                 }
-                .map_err(|_| Error::InvalidFormat)
+                .map_err(Error::Zstd)
             }
             #[cfg(any(feature = "lz4", feature = "lz4-std"))]
             super::CompressionAlgorithm::Lz4 => Ok(lz4_flex::compress_prepend_size(data)),
+            _ => Ok(data.to_vec()),
+        }
+    }
+
+    #[inline]
+    pub fn decompress_to(data: &[u8], dst: &mut [u8], cmp: Compression) -> Result<usize, Error> {
+        match cmp.algo {
+            #[cfg(feature = "snappy")]
+            super::CompressionAlgorithm::Snappy => snap::raw::Decoder::new()
+                .decompress(data, dst)
+                .map_err(Error::Snappy),
+            #[cfg(feature = "zstd")]
+            super::CompressionAlgorithm::Zstd => {
+                zstd_compression::bulk::decompress_to_buffer(data, dst).map_err(Error::Zstd)
+            }
+            #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+            super::CompressionAlgorithm::Lz4 => lz4_flex::decompress_into(&data[4..], dst)
+                .map_err(|e| Error::Lz4(Lz4Error::Decompression(e))),
+            _ => {
+                if data.len() > dst.len() {
+                    return Err(Error::BufferTooSmall {
+                        given: dst.len() as u64,
+                        min: data.len() as u64,
+                    });
+                }
+                dst[..data.len()].copy_from_slice(data);
+                Ok(data.len())
+            }
         }
     }
 
     #[inline]
     pub fn decompress_into_vec(data: &[u8], cmp: Compression) -> Result<Vec<u8>, Error> {
         match cmp.algo {
-            super::CompressionAlgorithm::None => Ok(data.to_vec()),
             #[cfg(feature = "snappy")]
-            super::CompressionAlgorithm::Snappy => {
-                snap::raw::Decoder::new().decompress_vec(data).map_err(|e| {
-                    // TODO: Polish error handle
-                    match e {
-                        snap::Error::TooBig { .. } => Error::Oversize((2 ^ 32) - 1),
-                        _ => Error::InvalidFormat,
-                    }
-                })
-            }
+            super::CompressionAlgorithm::Snappy => snap::raw::Decoder::new()
+                .decompress_vec(data)
+                .map_err(Error::Snappy),
             #[cfg(feature = "zstd")]
             super::CompressionAlgorithm::Zstd => {
-                let range = zstd_compression::compression_level_range();
-                match cmp.level {
-                    v if range.contains(&v) => zstd_compression::decode_all(data),
-                    v if v <= 0 => Ok(data.to_vec()),
-                    _ => zstd_compression::decode_all(data),
-                }
-                .map_err(|_| Error::InvalidFormat)
+                zstd_compression::decode_all(data).map_err(Error::Zstd)
             }
             #[cfg(any(feature = "lz4", feature = "lz4-std"))]
-            super::CompressionAlgorithm::Lz4 => {
-                lz4_flex::decompress_size_prepended(data).map_err(|_| Error::InvalidFormat)
-            }
+            super::CompressionAlgorithm::Lz4 => lz4_flex::decompress_size_prepended(data)
+                .map_err(|e| Error::Lz4(Lz4Error::Decompression(e))),
+            _ => Ok(data.to_vec()),
         }
     }
 
     #[inline]
     pub fn max_encoded_len(data: &[u8], cmp: Compression) -> usize {
         match cmp.algo {
-            super::CompressionAlgorithm::None => data.len(),
             #[cfg(feature = "snappy")]
             super::CompressionAlgorithm::Snappy => snap::raw::max_compress_len(data.len()),
             #[cfg(feature = "zstd")]
@@ -200,8 +372,9 @@ pub mod compression {
             }
             #[cfg(any(feature = "lz4", feature = "lz4-std"))]
             super::CompressionAlgorithm::Lz4 => {
-                lz4_flex::block::get_maximum_output_size(data.len())
+                lz4_flex::block::get_maximum_output_size(data.len()) + core::mem::size_of::<u32>()
             }
+            _ => data.len(),
         }
     }
 
@@ -215,6 +388,8 @@ pub mod compression {
                             1 => super::CompressionAlgorithm::Snappy,
                             #[cfg(feature = "zstd")]
                             2 => super::CompressionAlgorithm::Zstd,
+                            #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+                            3 => super::CompressionAlgorithm::Lz4,
                             _ => super::CompressionAlgorithm::None,
                         }
                     }
@@ -276,11 +451,14 @@ pub mod encrypt {
     impl std::error::Error for EncryptError {}
 
     /// AES encryption extensions
-    pub trait Encryptor: AsMut<[u8]> + AsRef<[u8]> {
+    pub trait Encryptor {
         /// Encrypts self with IV.
         /// Can be used for both encryption and decryption. IV is of
         /// AES block size.
-        fn encrypt(&mut self, key: &[u8], iv: &[u8]) -> Result<(), EncryptError> {
+        fn encrypt(&mut self, key: &[u8], iv: &[u8]) -> Result<(), EncryptError>
+        where
+            Self: AsMut<[u8]>,
+        {
             let data = self.as_mut();
             encrypt_in(data, key, iv)
         }
@@ -288,7 +466,10 @@ pub mod encrypt {
         /// Encrypts self with IV to a new `Vec`.
         /// Can be used for both encryption and decryption. IV is of
         /// AES block size.
-        fn encrypt_to_vec(&self, key: &[u8], iv: &[u8]) -> Result<Vec<u8>, EncryptError> {
+        fn encrypt_to_vec(&self, key: &[u8], iv: &[u8]) -> Result<Vec<u8>, EncryptError>
+        where
+            Self: AsRef<[u8]>,
+        {
             let src = self.as_ref();
             encrypt_to_vec(src, key, iv)
         }
@@ -296,13 +477,16 @@ pub mod encrypt {
         /// Encrypts self with IV to `dst`.
         /// Can be used for both encryption and decryption. IV is of
         /// AES block size.
-        fn encrypt_to(&self, dst: &mut [u8], key: &[u8], iv: &[u8]) -> Result<(), EncryptError> {
+        fn encrypt_to(&self, dst: &mut [u8], key: &[u8], iv: &[u8]) -> Result<(), EncryptError>
+        where
+            Self: AsRef<[u8]>,
+        {
             let src = self.as_ref();
             encrypt_to(dst, src, key, iv)
         }
     }
 
-    impl<T: AsMut<[u8]> + AsRef<[u8]>> Encryptor for T {}
+    impl<T> Encryptor for T {}
 
     /// Encrypts data with IV.
     /// Can be used for both encryption and decryption. IV is of
@@ -459,6 +643,11 @@ pub use ty::{Checksum, ChecksumAlgorithm};
 ))]
 pub mod checksum {
     impl Copy for super::Checksum {}
+    impl super::Checksum {
+        pub const fn new() -> Self {
+            Self { algo: 0, sum: 0 }
+        }
+    }
 
     #[derive(Copy, Clone, Default, Eq, PartialEq, Hash)]
     pub struct InvalidChecksumAlgorithm;
@@ -510,6 +699,7 @@ pub mod checksum {
             calculate_checksum(self.as_ref(), algorithm)
         }
 
+        /// Validates the checksum for the data against the given expected checksum.
         fn verify_checksum(&self, expected: u64, algo: super::ChecksumAlgorithm) -> bool
         where
             Self: AsRef<[u8]>,
@@ -518,7 +708,7 @@ pub mod checksum {
         }
     }
 
-    impl<T: AsRef<[u8]>> Checksumer for T {}
+    impl<T> Checksumer for T {}
 
     /// Calculates checksum for data using ct checksum type.
     #[inline]
@@ -606,26 +796,26 @@ pub mod checksum {
     }
 }
 
+/// Proto buf encode/decode
 pub trait Marshaller {
-    fn marshal(&self) -> Vec<u8>;
-
-    fn unmarshal(data: &[u8]) -> Result<Self, prost::DecodeError>
+    /// Encode to proto buf
+    fn marshal(&self) -> Vec<u8>
     where
-        Self: Sized;
-}
-
-impl<T: prost::Message + Default> Marshaller for T {
-    fn marshal(&self) -> Vec<u8> {
+        Self: prost::Message + Default,
+    {
         self.encode_to_vec()
     }
 
+    /// Decode from proto buf
     fn unmarshal(data: &[u8]) -> Result<Self, prost::DecodeError>
     where
-        Self: Sized,
+        Self: prost::Message + Default + Sized,
     {
         prost::Message::decode(data)
     }
 }
+
+impl<T> Marshaller for T {}
 
 macro_rules! impl_type {
     ($($ty: ty), +$(,)?) => {
@@ -640,7 +830,7 @@ macro_rules! impl_type {
 }
 
 impl_type! {
-    Checksum, DataKey, ManifestChange, ManifestChangeSet, Match, Kv, KvList, BlockOffset, TableIndex,
+    DataKey, ManifestChange, ManifestChangeSet, Match, Kv, KvList, BlockOffset, TableIndex,
 }
 
 #[derive(Copy, Clone, Default, Eq, PartialEq, Hash)]
@@ -733,7 +923,7 @@ impl ManifestChange {
             op: Operation::Create as i32,
             level: level as u32,
             key_id,
-            encryption_algo: EncryptionAlgorithm::Aes as i32,
+            encryption_algo: 0, // we only have one encryption algorithm currently
             compression: compression_ty,
         }
     }
@@ -745,7 +935,7 @@ impl ManifestChange {
             op: Operation::Delete as i32,
             level: 0,
             key_id: 0,
-            encryption_algo: 0,
+            encryption_algo: 0, // we only have one encryption algorithm currently
             compression: 0,
         }
     }

@@ -94,7 +94,8 @@ enum CompressionAlgorithm {
 message Compression {
   // compression algorithm
   CompressionAlgorithm algo = 1;
-  int32 level = 2; // only for zstd
+  // only for zstd, <= 0 use default(3) compression level, 1 - 21 uses the exact level of zstd compression level, >=22 use the largest compression level supported by zstd.
+  int32 level = 2;
 }
 
 message Checksum {

@@ -1,5 +1,3 @@
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Kv {
     #[prost(bytes = "vec", tag = "1")]
@@ -25,8 +23,6 @@ pub struct Kv {
 }
 /// Nested message and enum types in `KV`.
 pub mod kv {
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "kebab-case")]
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum Kind {
@@ -48,8 +44,6 @@ pub mod kv {
         }
     }
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KvList {
     #[prost(message, repeated, tag = "1")]
@@ -58,16 +52,12 @@ pub struct KvList {
     #[prost(uint64, tag = "10")]
     pub alloc_ref: u64,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ManifestChangeSet {
     /// A set of changes that are applied atomically.
     #[prost(message, repeated, tag = "1")]
     pub changes: ::prost::alloc::vec::Vec<ManifestChange>,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ManifestChange {
     /// Table ID.
@@ -88,8 +78,6 @@ pub struct ManifestChange {
 }
 /// Nested message and enum types in `ManifestChange`.
 pub mod manifest_change {
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "kebab-case")]
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum Operation {
@@ -110,19 +98,15 @@ pub mod manifest_change {
     }
 }
 /// Compression specifies how a block should be compressed.
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Compression {
     /// compression algorithm
     #[prost(enumeration = "CompressionAlgorithm", tag = "1")]
     pub algo: i32,
-    /// only for zstd
+    /// only for zstd, <= 0 use default(3) compression level, 1 - 21 uses the exact level of zstd compression level, >=22 use the largest compression level supported by zstd.
     #[prost(int32, tag = "2")]
     pub level: i32,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Checksum {
     /// For storing type of Checksum algorithm used
@@ -131,8 +115,6 @@ pub struct Checksum {
     #[prost(uint64, tag = "2")]
     pub sum: u64,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DataKey {
     #[prost(uint64, tag = "1")]
@@ -144,8 +126,6 @@ pub struct DataKey {
     #[prost(uint64, tag = "4")]
     pub created_at: u64,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
     #[prost(bytes = "vec", tag = "1")]
@@ -154,8 +134,6 @@ pub struct Match {
     #[prost(string, tag = "2")]
     pub ignore_bytes: ::prost::alloc::string::String,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BlockOffset {
     #[prost(bytes = "vec", tag = "1")]
@@ -165,8 +143,6 @@ pub struct BlockOffset {
     #[prost(uint32, tag = "3")]
     pub len: u32,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TableIndex {
     #[prost(message, repeated, tag = "1")]
@@ -184,8 +160,6 @@ pub struct TableIndex {
     #[prost(uint32, tag = "7")]
     pub stale_data_size: u32,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum EncryptionAlgorithm {
@@ -202,8 +176,6 @@ impl EncryptionAlgorithm {
         }
     }
 }
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ChecksumAlgorithm {
@@ -225,8 +197,6 @@ impl ChecksumAlgorithm {
     }
 }
 /// CompressionAlgorithm specifies to use which algorithm to compress a block.
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum CompressionAlgorithm {
