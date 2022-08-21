@@ -9,9 +9,9 @@ description = "(WIP) badger's ssttable implementation"
 default = ["std"]
 std = ["stretto/sync", "zallocator/std", "zallocator/pool", "vpb/std", "kvstructs/std"]
 
-# enable encryption
-encryption = ["vpb/encryption"]
-encryption-std = ["vpb/encryption-std"]
+# enable aes encryption
+aes = ["vpb/aes"]
+aes-std = ["vpb/aes-std"]
 
 # enable seahash checksum
 sea = ["vpb/sea"]
@@ -20,10 +20,6 @@ sea-std = ["vpb/sea-std"]
 # enable xxhash64 checksum
 xxhash64 = ["vpb/xxhash64"]
 xxhash64-std = ["vpb/xxhash64-std"]
-
-# enable crc32 checksum
-crc32 = ["vpb/crc32"]
-crc32-std = ["vpb/crc32-std"]
 
 
 [dependencies]

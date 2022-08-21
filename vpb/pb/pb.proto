@@ -53,45 +53,41 @@ message ManifestChangeSet {
 }
 
 enum EncryptionAlgorithm {
-  aes = 0;
+  None = 0;
+  Aes = 1;
 }
 
 message ManifestChange {
-  uint64 Id = 1;            // Table ID.
+  uint64 id = 1;            // Table ID.
   enum Operation {
     CREATE = 0;
     DELETE = 1;
   }
-  Operation Op   = 2;
-  uint32 Level   = 3;       // Only used for CREATE.
+  Operation op   = 2;
+  uint32 level   = 3;       // Only used for CREATE.
   uint64 key_id  = 4;
   EncryptionAlgorithm encryption_algo = 5;
   uint32 compression = 6;   // Only used for CREATE Op.
 }
 
-enum ChecksumAlgorithm {
-  CRC32C = 0;
-  XXHash64 = 1;
-  SeaHash = 2;
-}
-
-// CompressionAlgorithm specifies to use which algorithm to compress a block.
-enum CompressionAlgorithm {
-  // None mode indicates that a block is not compressed.
-  None = 0;
-  // Snappy mode indicates that a block is compressed using Snappy algorithm.
-  Snappy = 1;
-
-  // ZSTD mode indicates that a block is compressed using ZSTD algorithm.
-  // ZSTD,
-  Zstd = 2;
-
-  // Lz4 mode indicates that a block is compressed using Snappy algorithm. 
-  Lz4 = 3;
-}
 
 // Compression specifies how a block should be compressed.
 message Compression {
+  // CompressionAlgorithm specifies to use which algorithm to compress a block.
+  enum CompressionAlgorithm {
+    // None mode indicates that a block is not compressed.
+    None = 0;
+    // Snappy mode indicates that a block is compressed using Snappy algorithm.
+    Snappy = 1;
+
+    // ZSTD mode indicates that a block is compressed using ZSTD algorithm.
+    // ZSTD,
+    Zstd = 2;
+
+    // Lz4 mode indicates that a block is compressed using lz4 algorithm. 
+    Lz4 = 3;
+  }
+
   // compression algorithm
   CompressionAlgorithm algo = 1;
   // only for zstd, <= 0 use default(3) compression level, 1 - 21 uses the exact level of zstd compression level, >=22 use the largest compression level supported by zstd.
@@ -99,15 +95,20 @@ message Compression {
 }
 
 message Checksum {
+  enum ChecksumAlgorithm {
+    CRC32C = 0;
+    XXHash64 = 1;
+    SeaHash = 2;
+  }
   ChecksumAlgorithm algo = 1; // For storing type of Checksum algorithm used
   uint64 sum = 2;
 }
 
 message DataKey {
-  uint64 key_id      = 1;
+  uint64 key_id     = 1;
   bytes  data       = 2;
   bytes  iv         = 3;
-  uint64  created_at = 4;
+  uint64 created_at = 4;
 }
 
 message Match {
@@ -123,7 +124,7 @@ message BlockOffset {
 
 message TableIndex {
   repeated BlockOffset offsets = 1;
-  bytes bloom_filter = 2;
+  bytes  bloom_filter = 2;
   uint32 estimated_size = 3;
   uint64 max_version = 4;
   uint32 key_count = 5;
