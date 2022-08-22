@@ -5,7 +5,6 @@ use aes::{Aes128, Aes192, Aes256};
 
 use super::EncryptionAlgorithm;
 
-#[cfg(any(feature = "aes", feature = "aes-std"))]
 pub const BLOCK_SIZE: usize = 16;
 
 /// AES-128 in CTR mode

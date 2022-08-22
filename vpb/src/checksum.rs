@@ -1,4 +1,20 @@
+/// Tells when should DB verify checksum for SSTable blocks.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[repr(u8)]
+pub enum ChecksumVerificationMode {
+    /// Indicates DB should not verify checksum for SSTable blocks.
+    NoVerification = 0,
+    /// Indicates checksum should be verified while opening SSTtable.
+    OnTableRead = 1,
+    /// Indicates checksum should be verified on every SSTable block read.
+    OnBlockRead = 2,
+    /// Indicates checksum should be verified
+    /// on SSTable opening and on every block read.
+    OnTableAndBlockRead = 3,
+}
+
 impl Copy for super::Checksum {}
+
 impl super::Checksum {
     pub const fn new() -> Self {
         Self { algo: 0, sum: 0 }

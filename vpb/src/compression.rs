@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 impl Copy for crate::ty::Compression {}
 
 /// Compression specifies how a block should be compressed.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Compression {
     /// compression algorithm
     pub algo: super::CompressionAlgorithm,

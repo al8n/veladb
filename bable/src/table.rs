@@ -1,4 +1,6 @@
+use super::error::*;
 use kvstructs::bytes::Bytes;
+use vpb::{checksum::calculate_checksum, ChecksumAlgorithm, Marshaller};
 
 const INT_SIZE: usize = core::mem::size_of::<usize>();
 
@@ -17,30 +19,29 @@ pub struct Block {
 
 impl Block {
     #[inline(always)]
-    pub(crate) fn data(&self) -> Bytes {
+    pub fn data(&self) -> Bytes {
         self.data.slice(..self.entries_index_start)
     }
 
     #[inline(always)]
-    pub(crate) fn entry_offsets(&self) -> &[u32] {
+    pub fn entry_offsets(&self) -> &[u32] {
         self.entry_offsets.as_slice()
     }
 
     #[inline(always)]
-    pub(crate) fn size(&self) -> u64 {
+    pub fn size(&self) -> u64 {
         (3 * INT_SIZE // Size of the offset, entriesIndexStart and chkLen
             + self.data.len() + self.checksum.len() + self.entry_offsets.capacity() * 4)
             as u64
     }
 
     #[inline]
-    pub(crate) fn verify_checksum(&self) -> Result<()> {
-        let data = get_checksum(self.data.as_ref());
-        if data.as_slice().ne(self.checksum.as_ref()) {
-            return Err(Error::new_with_message(
-                ErrorKind::ChecksumMismatch,
-                "block checksum mismatch",
-            ));
+    pub fn verify_checksum(&self, algo: ChecksumAlgorithm) -> Result<()> {
+        if calculate_checksum(&self.data, algo)
+            .marshal()
+            .ne(self.checksum.as_ref())
+        {
+            return Err(Error::ChecksumMismatch);
         }
         Ok(())
     }

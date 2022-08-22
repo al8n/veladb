@@ -6,9 +6,11 @@ use alloc::vec::Vec;
 
 mod ty;
 pub use ty::{
-    compression::CompressionAlgorithm, kv::Kind, manifest_change::Operation, BlockOffset, DataKey,
-    Kv, KvList, ManifestChange, ManifestChangeSet, Match, TableIndex,
+    compression::CompressionAlgorithm, kv::Kind, manifest_change::Operation, BlockOffset, Kv,
+    KvList, ManifestChange, ManifestChangeSet, Match, TableIndex,
 };
+mod types;
+pub use types::*;
 
 pub use prost;
 
@@ -58,7 +60,7 @@ macro_rules! impl_type {
 }
 
 impl_type! {
-    DataKey, ManifestChange, ManifestChangeSet, Match, Kv, KvList, BlockOffset, TableIndex,
+    ManifestChange, ManifestChangeSet, Match, Kv, KvList, BlockOffset, TableIndex,
 }
 
 #[derive(Copy, Clone, Default, Eq, PartialEq, Hash)]
