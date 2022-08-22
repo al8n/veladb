@@ -7,48 +7,48 @@ const M: u32 = 0xc6a4a793;
 
 /// hash implements a hashing algorithm similar to the Murmur hash.
 pub fn hash(b: &[u8]) -> u32 {
-    let mut h = SEED ^ M.overflowing_mul(b.len() as u32).0;
+    let mut h = SEED ^ M.wrapping_mul(b.len() as u32);
 
     let mut c = b;
     while c.len() >= 4 {
-        h = h
-            .overflowing_add(
-                (c[0] as u32)
-                    | (c[1] as u32).overflowing_shl(8).0
-                    | (c[2] as u32).overflowing_shl(16).0
-                    | (c[3] as u32).overflowing_shl(24).0,
-            )
-            .0;
-        h = h.overflowing_mul(M).0;
-        h ^= h.overflowing_shr(16).0;
+        h = h.wrapping_add(
+            (c[0] as u32)
+                | (c[1] as u32).wrapping_shl(8)
+                | (c[2] as u32).wrapping_shl(16)
+                | (c[3] as u32).wrapping_shl(24),
+        );
+        h = h.wrapping_mul(M);
+        h ^= h.wrapping_shr(16);
         c = &c[4..];
     }
 
     match c.len() {
         3 => {
-            h = h.overflowing_add((c[2] as u32) << 16).0;
-            h = h.overflowing_add((c[1] as u32) << 8).0;
-            h = h.overflowing_add(c[0] as u32).0;
-            h = h.overflowing_mul(M).0;
-            h ^= h.overflowing_shr(24).0;
+            h = h.wrapping_add((c[2] as u32) << 16);
+            h = h.wrapping_add((c[1] as u32) << 8);
+            h = h.wrapping_add(c[0] as u32);
+            h = h.wrapping_mul(M);
+            h ^= h.wrapping_shr(24);
         }
         2 => {
-            h = h.overflowing_add((c[1] as u32) << 8).0;
-            h = h.overflowing_add(c[0] as u32).0;
-            h = h.overflowing_mul(M).0;
-            h ^= h.overflowing_shr(24).0;
+            h = h.wrapping_add((c[1] as u32) << 8);
+            h = h.wrapping_add(c[0] as u32);
+            h = h.wrapping_mul(M);
+            h ^= h.wrapping_shr(24);
         }
         1 => {
             h += c[0] as u32;
-            h = h.overflowing_mul(M).0;
-            h ^= h.overflowing_shr(24).0;
+            h = h.wrapping_mul(M);
+            h ^= h.wrapping_shr(24);
         }
         _ => {}
     }
     h
 }
 
-pub(crate) fn bloom_bits_per_key(num_entries: usize, fp: f64) -> usize {
+/// Returns the bits per key required by bloomfilter based on
+/// the false positive rate.
+pub fn bloom_bits_per_key(num_entries: usize, fp: f64) -> usize {
     let fne = num_entries as f64;
     let size = -1f64 * fne * fp.ln() / LN_2.powi(2);
     let locs = LN_2.ceil() * size / fne;
@@ -56,6 +56,7 @@ pub(crate) fn bloom_bits_per_key(num_entries: usize, fp: f64) -> usize {
 }
 
 /// Filter is an encoded set of Vec<u8> keys.
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[repr(transparent)]
 pub struct Filter(Bytes);
 
@@ -147,7 +148,7 @@ pub trait MayContain {
                     if slice[(bit_pos / 8) as usize] & (1 << (bit_pos % 8)) == 0 {
                         return false;
                     }
-                    h = h.overflowing_add(delta).0;
+                    h = h.wrapping_add(delta);
                 }
                 true
             }
@@ -287,13 +288,12 @@ mod tests {
             break;
         }
 
-        if num_mediocre_filters > num_good_filters / 5 {
-            eprintln!(
-                "{} mediocre filters but only {} good filters",
-                num_mediocre_filters, num_good_filters
-            );
-        }
-        eprintln!("{} {}", num_mediocre_filters, num_good_filters)
+        assert!(
+            num_mediocre_filters <= num_good_filters / 5,
+            "{} mediocre filters but only {} good filters",
+            num_mediocre_filters,
+            num_good_filters
+        );
     }
 
     #[test]
