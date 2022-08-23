@@ -18,11 +18,17 @@ impl Default for Compression {
 }
 
 impl Compression {
+    #[inline]
     pub const fn new() -> Self {
         Self {
             algo: super::CompressionAlgorithm::None,
             level: 0,
         }
+    }
+
+    #[inline]
+    pub const fn is_none(&self) -> bool {
+        matches!(self.algo, super::CompressionAlgorithm::None)
     }
 }
 
@@ -215,7 +221,7 @@ pub trait Compressor {
     where
         Self: AsRef<[u8]>,
     {
-        max_encoded_len(self.as_ref(), cmp)
+        max_encoded_len(cmp, self.as_ref().len())
     }
 }
 
@@ -331,26 +337,25 @@ pub fn decompress_into_vec(data: &[u8], cmp: Compression) -> Result<Vec<u8>, Err
 }
 
 #[inline]
-pub fn max_encoded_len(data: &[u8], cmp: Compression) -> usize {
+pub fn max_encoded_len(cmp: Compression, sz: usize) -> usize {
     match cmp.algo {
         #[cfg(feature = "snappy")]
-        super::CompressionAlgorithm::Snappy => snap::raw::max_compress_len(data.len()),
+        super::CompressionAlgorithm::Snappy => snap::raw::max_compress_len(sz),
         #[cfg(feature = "zstd")]
         super::CompressionAlgorithm::Zstd => {
             let low_limit = 128 << 10; // 128 kb
-            let src_size = data.len();
-            let margin = if src_size < low_limit {
-                (low_limit - src_size) >> 11
+            let margin = if sz < low_limit {
+                (low_limit - sz) >> 11
             } else {
                 0
             };
-            src_size + (src_size >> 8) + margin
+            sz + (sz >> 8) + margin
         }
         #[cfg(any(feature = "lz4", feature = "lz4-std"))]
         super::CompressionAlgorithm::Lz4 => {
-            lz4_flex::block::get_maximum_output_size(data.len()) + core::mem::size_of::<u32>()
+            lz4_flex::block::get_maximum_output_size(sz) + core::mem::size_of::<u32>()
         }
-        _ => data.len(),
+        _ => sz,
     }
 }
 

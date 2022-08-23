@@ -17,5 +17,5 @@ pub use table::*;
 mod builder;
 pub use builder::*;
 
-mod bloom;
+pub mod bloom;
 mod options;

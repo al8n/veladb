@@ -30,6 +30,7 @@ pub(crate) struct Header {
 }
 
 impl Header {
+    #[inline]
     pub fn encode(&self) -> [u8; HEADER_SIZE] {
         let mut buf = [0; HEADER_SIZE];
         buf[..2].copy_from_slice(&self.overlap.to_le_bytes());
@@ -37,6 +38,7 @@ impl Header {
         buf
     }
 
+    #[inline]
     pub fn decode(buf: &[u8]) -> Self {
         Self {
             overlap: u16::from_le_bytes(buf[..2].try_into().unwrap()),
@@ -84,6 +86,11 @@ impl BBlock {
     #[inline(always)]
     pub(crate) fn end(&self) -> usize {
         self.end.get()
+    }
+
+    #[inline(always)]
+    pub(crate) fn set_end(&self, end: usize) {
+        self.end.set(end);
     }
 }
 
@@ -165,9 +172,9 @@ unsafe impl Sync for BBlockRef {}
 /// Builder is used in building a table.
 pub struct Builder {
     /// Typically tens or hundreds of meg. This is for one single file.
-    alloc: Allocator,
+    alloc: Arc<Allocator>,
     cur_block: BBlockRef,
-    compressed_size: AtomicU32,
+    compressed_size: Arc<AtomicU32>,
     uncompressed_size: AtomicU32,
 
     len_offsets: u32,
@@ -178,8 +185,6 @@ pub struct Builder {
     on_disk_size: u32,
     stale_data_size: usize,
 
-    #[cfg(feature = "std")]
-    wg: crossbeam_utils::sync::WaitGroup,
     #[cfg(feature = "std")]
     block_tx: Option<crossbeam_channel::Sender<BBlockRef>>,
     block_list: Vec<BBlockRef>,

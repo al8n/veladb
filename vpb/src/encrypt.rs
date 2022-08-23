@@ -7,6 +7,13 @@ use super::EncryptionAlgorithm;
 
 pub const BLOCK_SIZE: usize = 16;
 
+impl super::EncryptionAlgorithm {
+    #[inline]
+    pub const fn is_none(&self) -> bool {
+        matches!(self, super::EncryptionAlgorithm::None)
+    }
+}
+
 /// AES-128 in CTR mode
 #[cfg(any(feature = "aes", feature = "aes-std"))]
 pub type Aes128Ctr = ctr::Ctr64BE<Aes128>;
