@@ -14,12 +14,14 @@ pub use ty::{
 mod types;
 pub use types::*;
 
+pub use kvstructs;
 pub use prost;
 
 /// Compression/Decompression
 pub use compression::Compression;
 pub mod compression;
 
+pub use encrypt::Encryption;
 /// Encryption/Decryption
 pub use ty::EncryptionAlgorithm;
 pub mod encrypt;

@@ -59,6 +59,15 @@ pub struct ManifestChangeSet {
     pub changes: ::prost::alloc::vec::Vec<ManifestChange>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Encryption {
+    /// For storing type of encryption algorithm used
+    #[prost(enumeration = "EncryptionAlgorithm", tag = "1")]
+    pub algo: i32,
+    /// For storing the secret key
+    #[prost(bytes = "vec", tag = "2")]
+    pub secret: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ManifestChange {
     /// Table ID.
     #[prost(uint64, tag = "1")]

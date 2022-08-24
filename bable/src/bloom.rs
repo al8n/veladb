@@ -1,6 +1,6 @@
 use core::f64::consts::LN_2;
 
-use kvstructs::bytes::{BufMut, Bytes, BytesMut};
+use vpb::kvstructs::bytes::{BufMut, Bytes, BytesMut};
 
 const SEED: u32 = 0xbc9f1d34;
 const M: u32 = 0xc6a4a793;

@@ -7,8 +7,8 @@ description = "key-value proto buffer for veladb"
 
 [features]
 default = ["std"]
-full = ["std", "sea-std", "xxhash64-std", "aes-std", "snappy", "zstd", "lz4-std", "bytes/std"]
-std = ["prost/std", "crc32fast/std"]
+full = ["std", "sea-std", "xxhash64-std", "aes-std", "snappy", "zstd", "lz4-std"]
+std = ["prost/std", "crc32fast/std", "kvstructs/default"]
 js = ["getrandom/js"]
 
 # enable aes encryption
@@ -35,8 +35,8 @@ lz4-std = ["lz4", "lz4_flex/default"]
 
 
 [dependencies]
-bytes = { version = "1.2", default-features = false, optional = true }
 getrandom = { version = "0.2", optional = true }
+kvstructs = { version = "0.0.23", optional = true, default-features = false }
 lazy_static = { version = "1.4", optional = true }
 prost = { version = "0.11", default-features = false, features = ["prost-derive"] }
 rand = { version = "0.8", optional = true, default-features = false }

@@ -57,6 +57,11 @@ enum EncryptionAlgorithm {
   Aes = 1;
 }
 
+message Encryption {
+  EncryptionAlgorithm algo = 1; // For storing type of encryption algorithm used
+  bytes secret = 2; // For storing the secret key
+}
+
 message ManifestChange {
   uint64 id = 1;            // Table ID.
   enum Operation {

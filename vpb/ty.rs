@@ -685,6 +685,149 @@ mod ty {
             builder.finish()
         }
     }
+    pub struct Encryption {
+        /// For storing type of encryption algorithm used
+        #[prost(enumeration = "EncryptionAlgorithm", tag = "1")]
+        pub algo: i32,
+        /// For storing the secret key
+        #[prost(bytes = "vec", tag = "2")]
+        pub secret: ::prost::alloc::vec::Vec<u8>,
+    }
+    #[automatically_derived]
+    impl ::core::clone::Clone for Encryption {
+        #[inline]
+        fn clone(&self) -> Encryption {
+            Encryption {
+                algo: ::core::clone::Clone::clone(&self.algo),
+                secret: ::core::clone::Clone::clone(&self.secret),
+            }
+        }
+    }
+    impl ::core::marker::StructuralPartialEq for Encryption {}
+    #[automatically_derived]
+    impl ::core::cmp::PartialEq for Encryption {
+        #[inline]
+        fn eq(&self, other: &Encryption) -> bool {
+            self.algo == other.algo && self.secret == other.secret
+        }
+        #[inline]
+        fn ne(&self, other: &Encryption) -> bool {
+            self.algo != other.algo || self.secret != other.secret
+        }
+    }
+    impl ::prost::Message for Encryption {
+        #[allow(unused_variables)]
+        fn encode_raw<B>(&self, buf: &mut B)
+        where
+            B: ::prost::bytes::BufMut,
+        {
+            if self.algo != EncryptionAlgorithm::default() as i32 {
+                ::prost::encoding::int32::encode(1u32, &self.algo, buf);
+            }
+            if self.secret != b"" as &[u8] {
+                ::prost::encoding::bytes::encode(2u32, &self.secret, buf);
+            }
+        }
+        #[allow(unused_variables)]
+        fn merge_field<B>(
+            &mut self,
+            tag: u32,
+            wire_type: ::prost::encoding::WireType,
+            buf: &mut B,
+            ctx: ::prost::encoding::DecodeContext,
+        ) -> ::core::result::Result<(), ::prost::DecodeError>
+        where
+            B: ::prost::bytes::Buf,
+        {
+            const STRUCT_NAME: &'static str = "Encryption";
+            match tag {
+                1u32 => {
+                    let mut value = &mut self.algo;
+                    ::prost::encoding::int32::merge(wire_type, value, buf, ctx).map_err(
+                        |mut error| {
+                            error.push(STRUCT_NAME, "algo");
+                            error
+                        },
+                    )
+                }
+                2u32 => {
+                    let mut value = &mut self.secret;
+                    ::prost::encoding::bytes::merge(wire_type, value, buf, ctx).map_err(
+                        |mut error| {
+                            error.push(STRUCT_NAME, "secret");
+                            error
+                        },
+                    )
+                }
+                _ => ::prost::encoding::skip_field(wire_type, tag, buf, ctx),
+            }
+        }
+        #[inline]
+        fn encoded_len(&self) -> usize {
+            0 + if self.algo != EncryptionAlgorithm::default() as i32 {
+                ::prost::encoding::int32::encoded_len(1u32, &self.algo)
+            } else {
+                0
+            } + if self.secret != b"" as &[u8] {
+                ::prost::encoding::bytes::encoded_len(2u32, &self.secret)
+            } else {
+                0
+            }
+        }
+        fn clear(&mut self) {
+            self.algo = EncryptionAlgorithm::default() as i32;
+            self.secret.clear();
+        }
+    }
+    impl ::core::default::Default for Encryption {
+        fn default() -> Self {
+            Encryption {
+                algo: EncryptionAlgorithm::default() as i32,
+                secret: ::core::default::Default::default(),
+            }
+        }
+    }
+    impl ::core::fmt::Debug for Encryption {
+        fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+            let mut builder = f.debug_struct("Encryption");
+            let builder = {
+                let wrapper = {
+                    struct ScalarWrapper<'a>(&'a i32);
+                    impl<'a> ::core::fmt::Debug for ScalarWrapper<'a> {
+                        fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                            match EncryptionAlgorithm::from_i32(*self.0) {
+                                None => ::core::fmt::Debug::fmt(&self.0, f),
+                                Some(en) => ::core::fmt::Debug::fmt(&en, f),
+                            }
+                        }
+                    }
+                    ScalarWrapper(&self.algo)
+                };
+                builder.field("algo", &wrapper)
+            };
+            let builder = {
+                let wrapper = {
+                    fn ScalarWrapper<T>(v: T) -> T {
+                        v
+                    }
+                    ScalarWrapper(&self.secret)
+                };
+                builder.field("secret", &wrapper)
+            };
+            builder.finish()
+        }
+    }
+    #[allow(dead_code)]
+    impl Encryption {
+        ///Returns the enum value of `algo`, or the default if the field is set to an invalid enum value.
+        pub fn algo(&self) -> EncryptionAlgorithm {
+            EncryptionAlgorithm::from_i32(self.algo).unwrap_or(EncryptionAlgorithm::default())
+        }
+        ///Sets `algo` to the provided enum value.
+        pub fn set_algo(&mut self, value: EncryptionAlgorithm) {
+            self.algo = value as i32;
+        }
+    }
     pub struct ManifestChange {
         /// Table ID.
         #[prost(uint64, tag = "1")]

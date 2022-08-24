@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use kvstructs::bytes::Bytes;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataKey {

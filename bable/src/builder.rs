@@ -1,7 +1,8 @@
-use alloc::{sync::Arc, vec::Vec};
-use core::cell::{Cell, UnsafeCell};
-use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use kvstructs::{bytes::BytesMut, Key};
+use super::error::*;
+use crate::sync::{Arc, AtomicU32, AtomicUsize, Ordering};
+use alloc::vec::Vec;
+use core::cell::UnsafeCell;
+use vpb::kvstructs::{bytes::BytesMut, Key};
 use zallocator::{pool::Allocator, Buffer};
 
 #[cfg(feature = "std")]
@@ -56,13 +57,24 @@ pub(crate) struct BBlock {
     // Offsets of entries present in current block.
     entry_offsets: Vec<u32>,
     // Points to the end offset of the block.
-    end: Cell<usize>,
-
-    encrypt_data_ptr: *const u8,
-    encrypt_data_len: usize,
+    end: AtomicUsize,
 }
 
+/// Safety: we will not concurrently read/write data
+unsafe impl Send for BBlock {}
+unsafe impl Sync for BBlock {}
+
 impl BBlock {
+    #[inline]
+    pub(crate) fn new(buf: Buffer) -> Self {
+        Self {
+            data: UnsafeCell::new(buf),
+            base_key: Key::new(),
+            entry_offsets: Vec::new(),
+            end: AtomicUsize::new(0),
+        }
+    }
+
     #[inline(always)]
     pub(crate) fn data(&self) -> &Buffer {
         let data = self.data.get();
@@ -78,102 +90,101 @@ impl BBlock {
     }
 
     #[inline(always)]
-    pub(crate) fn increase_end(&self, add: usize) {
-        let x = self.end.get();
-        self.end.set(x + add);
+    pub(crate) fn increase_end(&self, add: usize) -> usize {
+        self.end.fetch_add(add, Ordering::SeqCst)
     }
 
     #[inline(always)]
     pub(crate) fn end(&self) -> usize {
-        self.end.get()
+        self.end.load(Ordering::SeqCst)
     }
 
     #[inline(always)]
     pub(crate) fn set_end(&self, end: usize) {
-        self.end.set(end);
+        self.end.store(end, Ordering::SeqCst);
     }
 }
 
-pub(crate) struct BBlockRef {
-    ptr: core::ptr::NonNull<BBlock>,
-    refs: Arc<AtomicUsize>,
-}
+// pub(crate) struct BBlockRef {
+//     ptr: core::ptr::NonNull<BBlock>,
+//     refs: Arc<AtomicUsize>,
+// }
 
-impl BBlockRef {
-    #[inline(always)]
-    fn new(bblk: BBlock) -> Self {
-        let bblk_ptr = Box::into_raw(Box::new(bblk));
-        Self {
-            ptr: unsafe { core::ptr::NonNull::new_unchecked(bblk_ptr) },
-            // count self
-            refs: Arc::new(AtomicUsize::new(1)),
-        }
-    }
+// impl BBlockRef {
+//     #[inline(always)]
+//     fn new(bblk: BBlock) -> Self {
+//         let bblk_ptr = Box::into_raw(Box::new(bblk));
+//         Self {
+//             ptr: unsafe { core::ptr::NonNull::new_unchecked(bblk_ptr) },
+//             // count self
+//             refs: Arc::new(AtomicUsize::new(1)),
+//         }
+//     }
 
-    #[inline(always)]
-    fn base_key(&self) -> &Key {
-        &unsafe { self.ptr.as_ref() }.base_key
-    }
+//     #[inline(always)]
+//     fn base_key(&self) -> &Key {
+//         &unsafe { self.ptr.as_ref() }.base_key
+//     }
 
-    #[inline(always)]
-    fn set_base_key(&self, key: Key) {
-        let mut blk = unsafe { &mut *self.ptr.as_ptr() };
-        blk.base_key = key;
-    }
+//     #[inline(always)]
+//     fn set_base_key(&self, key: Key) {
+//         let mut blk = unsafe { &mut *self.ptr.as_ptr() };
+//         blk.base_key = key;
+//     }
 
-    #[inline(always)]
-    fn encrypt_key(&self) -> &[u8] {
-        unsafe { core::slice::from_raw_parts(self.encrypt_data_ptr, self.encrypt_data_len) }
-    }
+//     #[inline(always)]
+//     fn encrypt_key(&self) -> &[u8] {
+//         unsafe { core::slice::from_raw_parts(self.encrypt_data_ptr, self.encrypt_data_len) }
+//     }
 
-    #[inline(always)]
-    const fn as_ptr(&self) -> *mut BBlock {
-        self.ptr.as_ptr()
-    }
-}
+//     #[inline(always)]
+//     const fn as_ptr(&self) -> *mut BBlock {
+//         self.ptr.as_ptr()
+//     }
+// }
 
-impl core::ops::Deref for BBlockRef {
-    type Target = BBlock;
+// impl core::ops::Deref for BBlockRef {
+//     type Target = BBlock;
 
-    fn deref(&self) -> &Self::Target {
-        unsafe { self.ptr.as_ref() }
-    }
-}
+//     fn deref(&self) -> &Self::Target {
+//         unsafe { self.ptr.as_ref() }
+//     }
+// }
 
-impl core::ops::DerefMut for BBlockRef {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.ptr.as_mut() }
-    }
-}
+// impl core::ops::DerefMut for BBlockRef {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         unsafe { self.ptr.as_mut() }
+//     }
+// }
 
-impl Clone for BBlockRef {
-    fn clone(&self) -> Self {
-        self.refs.fetch_add(1, Ordering::SeqCst);
-        Self {
-            ptr: self.ptr,
-            refs: self.refs.clone(),
-        }
-    }
-}
+// impl Clone for BBlockRef {
+//     fn clone(&self) -> Self {
+//         self.refs.fetch_add(1, Ordering::SeqCst);
+//         Self {
+//             ptr: self.ptr,
+//             refs: self.refs.clone(),
+//         }
+//     }
+// }
 
-impl Drop for BBlockRef {
-    fn drop(&mut self) {
-        if self.refs.fetch_sub(1, Ordering::SeqCst) == 1 {
-            unsafe {
-                core::ptr::drop_in_place(self.ptr.as_ptr());
-            }
-        }
-    }
-}
+// impl Drop for BBlockRef {
+//     fn drop(&mut self) {
+//         if self.refs.fetch_sub(1, Ordering::SeqCst) == 1 {
+//             unsafe {
+//                 core::ptr::drop_in_place(self.ptr.as_ptr());
+//             }
+//         }
+//     }
+// }
 
-unsafe impl Send for BBlockRef {}
-unsafe impl Sync for BBlockRef {}
+// unsafe impl Send for BBlockRef {}
+// unsafe impl Sync for BBlockRef {}
 
 /// Builder is used in building a table.
 pub struct Builder {
     /// Typically tens or hundreds of meg. This is for one single file.
-    alloc: Arc<Allocator>,
-    cur_block: BBlockRef,
+    alloc: Allocator,
+    cur_block: Arc<BBlock>,
     compressed_size: Arc<AtomicU32>,
     uncompressed_size: AtomicU32,
 
@@ -186,6 +197,8 @@ pub struct Builder {
     stale_data_size: usize,
 
     #[cfg(feature = "std")]
-    block_tx: Option<crossbeam_channel::Sender<BBlockRef>>,
-    block_list: Vec<BBlockRef>,
+    wg: Option<crossbeam_utils::sync::WaitGroup>,
+    #[cfg(feature = "std")]
+    block_tx: Option<crossbeam_channel::Sender<Arc<BBlock>>>,
+    block_list: Vec<Arc<BBlock>>,
 }

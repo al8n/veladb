@@ -14,6 +14,104 @@ impl super::EncryptionAlgorithm {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Encryption {
+    algo: EncryptionAlgorithm,
+    secret: kvstructs::bytes::Bytes,
+}
+
+impl Encryption {
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            algo: EncryptionAlgorithm::None,
+            secret: kvstructs::bytes::Bytes::new(),
+        }
+    }
+
+    #[inline]
+    pub const fn algorithm(&self) -> EncryptionAlgorithm {
+        self.algo
+    }
+
+    #[inline]
+    pub const fn is_none(&self) -> bool {
+        self.algo.is_none()
+    }
+
+    #[inline]
+    pub fn secret(&self) -> &[u8] {
+        self.secret.as_ref()
+    }
+
+    /// Set the secret used to encrypt/decrypt the encrypted text.
+    #[inline]
+    pub fn set_secret(&mut self, secret: kvstructs::bytes::Bytes) {
+        self.secret = secret;
+    }
+}
+
+impl prost::Message for Encryption {
+    #[allow(unused_variables)]
+    fn encode_raw<B>(&self, buf: &mut B)
+    where
+        B: prost::bytes::BufMut,
+    {
+        if self.algo != EncryptionAlgorithm::default() {
+            prost::encoding::int32::encode(1u32, &(self.algo as i32), buf);
+        }
+        if self.secret != b"" as &[u8] {
+            prost::encoding::bytes::encode(2u32, &self.secret, buf);
+        }
+    }
+    #[allow(unused_variables)]
+    fn merge_field<B>(
+        &mut self,
+        tag: u32,
+        wire_type: prost::encoding::WireType,
+        buf: &mut B,
+        ctx: prost::encoding::DecodeContext,
+    ) -> ::core::result::Result<(), prost::DecodeError>
+    where
+        B: prost::bytes::Buf,
+    {
+        const STRUCT_NAME: &str = "Encryption";
+        match tag {
+            1u32 => {
+                let value = &mut (self.algo as i32);
+                prost::encoding::int32::merge(wire_type, value, buf, ctx).map_err(|mut error| {
+                    error.push(STRUCT_NAME, "algo");
+                    error
+                })
+            }
+            2u32 => {
+                let value = &mut self.secret;
+                prost::encoding::bytes::merge(wire_type, value, buf, ctx).map_err(|mut error| {
+                    error.push(STRUCT_NAME, "secret");
+                    error
+                })
+            }
+            _ => prost::encoding::skip_field(wire_type, tag, buf, ctx),
+        }
+    }
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        (if self.algo != EncryptionAlgorithm::default() {
+            prost::encoding::int32::encoded_len(1u32, &(self.algo as i32))
+        } else {
+            0
+        }) + (if self.secret != b"" as &[u8] {
+            prost::encoding::bytes::encoded_len(2u32, &self.secret)
+        } else {
+            0
+        })
+    }
+    fn clear(&mut self) {
+        self.algo = EncryptionAlgorithm::default();
+        self.secret.clear();
+    }
+}
+
 /// AES-128 in CTR mode
 #[cfg(any(feature = "aes", feature = "aes-std"))]
 pub type Aes128Ctr = ctr::Ctr64BE<Aes128>;

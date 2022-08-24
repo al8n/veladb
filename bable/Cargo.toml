@@ -7,7 +7,7 @@ description = "(WIP) badger's ssttable implementation"
 
 [features]
 default = ["std"]
-std = ["stretto/sync", "zallocator/std", "zallocator/pool", "vpb/std", "kvstructs/std", "crossbeam-channel", "crossbeam-utils", "tracing/std", "num_cpus"]
+std = ["stretto/sync", "zallocator/std", "zallocator/pool", "vpb/std", "crossbeam-channel", "crossbeam-utils", "tracing/std", "triomphe/std", "num_cpus", "scopeguard"]
 nightly = ["zallocator/nightly"]
 
 
@@ -28,8 +28,9 @@ xxhash64-std = ["vpb/xxhash64-std"]
 crossbeam-channel = { version = "0.5", optional = true }
 crossbeam-utils = { version = "0.8", optional = true }
 num_cpus = { version = "1.13", optional = true }
-kvstructs = { version = "0.0.23", default-features = false }
 stretto = { version = "0.6", optional = true, default-features = false }
+scopeguard = { version = "1.1", optional = true }
 tracing = { version = "0.1", optional = true, default-features = false }
+triomphe = { version = "0.1.7", default-features = false }
 vpb = { path = "../vpb", default-features = false }
 zallocator = { version = "0.1", optional = true, default-features = false }

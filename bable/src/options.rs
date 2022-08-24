@@ -1,5 +1,5 @@
-use alloc::sync::Arc;
-pub use vpb::{checksum::ChecksumVerificationMode, Compression, DataKey};
+use crate::sync::Arc;
+use vpb::{checksum::ChecksumVerificationMode, Compression, Encryption};
 use zallocator::pool::AllocatorPool;
 
 /// TableOptions contains configurable options for Table/Builder.
@@ -19,15 +19,15 @@ pub struct TableOptions {
     /// Indicates the compression algorithm used for block compression.
     compression: Compression,
 
+    /// Indicates the encryption algorithm used for block encryption.
+    encryption: Encryption,
+
     // Options for Table builder.
     /// The false positive probabiltiy of bloom filter.
     bloom_false_positive: f64,
 
     /// the size of each block inside SSTable in bytes.
     block_size: usize,
-
-    /// the key used to decrypt the encrypted text.
-    data_key: DataKey,
 
     /// Block cache is used to cache decompressed and decrypted blocks.
     // block_cache: Option<Arc<Cache>>,
@@ -46,7 +46,7 @@ impl TableOptions {
             bloom_false_positive: 0.01,
             block_size: 4 * 1024,
             alloc_pool: pool,
-            data_key: DataKey::new(),
+            encryption: Encryption::new(),
         }
     }
 
@@ -89,18 +89,18 @@ impl TableOptions {
         self
     }
 
-    /// get maximum capacity of the table, 0.9x of the maximum size of the table
+    /// get maximum capacity of the table, 0.95x of the maximum size of the table
     #[cfg(feature = "nightly")]
     #[inline]
     pub const fn table_capacity(&self) -> u64 {
-        (self.table_size as f64 * 0.9) as u64
+        (self.table_size as f64 * 0.95) as u64
     }
 
     /// get maximum capacity of the table, 0.9x of the maximum size of the table
     #[cfg(not(feature = "nightly"))]
     #[inline]
     pub fn table_capacity(&self) -> u64 {
-        (self.table_size as f64 * 0.9) as u64
+        (self.table_size as f64 * 0.95) as u64
     }
 
     /// get the compression algorithm used for block compression.
@@ -113,6 +113,19 @@ impl TableOptions {
     #[inline]
     pub const fn set_compression(mut self, compression: Compression) -> Self {
         self.compression = compression;
+        self
+    }
+
+    /// get the encryption algorithm used for block encryption.
+    #[inline]
+    pub const fn encryption(&self) -> &Encryption {
+        &self.encryption
+    }
+
+    /// set the encryption algorithm used for block encryption.
+    #[inline]
+    pub fn set_encryption(mut self, encryption: Encryption) -> Self {
+        self.encryption = encryption;
         self
     }
 
@@ -152,19 +165,6 @@ impl TableOptions {
     #[inline]
     pub const fn set_block_size(mut self, val: usize) -> Self {
         self.block_size = val;
-        self
-    }
-
-    /// get the key used to decrypt the encrypted text.
-    #[inline]
-    pub const fn data_key(&self) -> &DataKey {
-        &self.data_key
-    }
-
-    /// set the key used to decrypt the encrypted text.
-    #[inline]
-    pub fn set_data_key(mut self, val: DataKey) -> Self {
-        self.data_key = val;
         self
     }
 

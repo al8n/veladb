@@ -1,6 +1,5 @@
 use super::error::*;
-use kvstructs::bytes::Bytes;
-use vpb::{checksum::calculate_checksum, ChecksumAlgorithm, Marshaller};
+use vpb::{checksum::calculate_checksum, kvstructs::bytes::Bytes, ChecksumAlgorithm, Marshaller};
 
 const INT_SIZE: usize = core::mem::size_of::<usize>();
 

@@ -19,3 +19,8 @@ pub use builder::*;
 
 pub mod bloom;
 mod options;
+
+mod sync {
+    pub use core::sync::atomic::*;
+    pub use triomphe::Arc;
+}
