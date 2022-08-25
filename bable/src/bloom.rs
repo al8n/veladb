@@ -55,7 +55,7 @@ pub fn bloom_bits_per_key(num_entries: usize, fp: f64) -> usize {
     locs as usize
 }
 
-/// Filter is an encoded set of Vec<u8> keys.
+/// Filter is an encoded set of `Bytes` keys.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[repr(transparent)]
 pub struct Filter(Bytes);
@@ -111,6 +111,11 @@ impl Filter {
     #[inline]
     pub const fn len(&self) -> usize {
         self.0.len()
+    }
+
+    #[inline]
+    pub const fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     #[inline]

@@ -1,12 +1,47 @@
 use alloc::vec::Vec;
 
-impl Copy for crate::ty::Compression {}
+/// CompressionAlgorithm specifies to use which algorithm to compress a block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CompressionAlgorithm {
+    /// None mode indicates that a block is not compressed.
+    None = 0,
+
+    /// Snappy mode indicates that a block is compressed using Snappy algorithm.
+    #[cfg(feature = "snappy")]
+    Snappy = 1,
+    /// ZSTD mode indicates that a block is compressed using ZSTD algorithm.
+    /// ZSTD,
+    #[cfg(feature = "zstd")]
+    Zstd = 2,
+    /// Lz4 mode indicates that a block is compressed using lz4 algorithm.
+    #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+    Lz4 = 3,
+}
+
+impl CompressionAlgorithm {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub const fn as_str_name(&self) -> &'static str {
+        match self {
+            CompressionAlgorithm::None => "None",
+            #[cfg(feature = "snappy")]
+            CompressionAlgorithm::Snappy => "Snappy",
+            #[cfg(feature = "zstd")]
+            CompressionAlgorithm::Zstd => "Zstd",
+            #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+            CompressionAlgorithm::Lz4 => "Lz4",
+        }
+    }
+}
 
 /// Compression specifies how a block should be compressed.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Compression {
     /// compression algorithm
-    pub algo: super::CompressionAlgorithm,
+    pub algo: CompressionAlgorithm,
     /// only for zstd, <= 0 use default(3) compression level, 1 - 21 uses the exact level of zstd compression level, >=22 use the largest compression level supported by zstd.
     pub level: i32,
 }
@@ -21,14 +56,14 @@ impl Compression {
     #[inline]
     pub const fn new() -> Self {
         Self {
-            algo: super::CompressionAlgorithm::None,
+            algo: CompressionAlgorithm::None,
             level: 0,
         }
     }
 
     #[inline]
     pub const fn is_none(&self) -> bool {
-        matches!(self.algo, super::CompressionAlgorithm::None)
+        matches!(self.algo, CompressionAlgorithm::None)
     }
 }
 
@@ -38,7 +73,7 @@ impl prost::Message for Compression {
     where
         B: ::prost::bytes::BufMut,
     {
-        if self.algo != super::CompressionAlgorithm::default() {
+        if self.algo != CompressionAlgorithm::default() {
             ::prost::encoding::int32::encode(1u32, &(self.algo as i32), buf);
         }
         if self.level != 0i32 {
@@ -79,7 +114,7 @@ impl prost::Message for Compression {
 
     #[inline]
     fn encoded_len(&self) -> usize {
-        (if self.algo != super::CompressionAlgorithm::default() {
+        (if self.algo != CompressionAlgorithm::default() {
             ::prost::encoding::int32::encoded_len(1u32, &(self.algo as i32))
         } else {
             0
@@ -92,7 +127,7 @@ impl prost::Message for Compression {
 
     #[inline]
     fn clear(&mut self) {
-        self.algo = super::CompressionAlgorithm::default();
+        self.algo = CompressionAlgorithm::default();
         self.level = 0i32;
     }
 }
@@ -231,11 +266,11 @@ impl<T> Compressor for T {}
 pub fn compress_to(data: &[u8], dst: &mut [u8], cmp: Compression) -> Result<usize, Error> {
     match cmp.algo {
         #[cfg(feature = "snappy")]
-        super::CompressionAlgorithm::Snappy => snap::raw::Encoder::new()
+        CompressionAlgorithm::Snappy => snap::raw::Encoder::new()
             .compress(data, dst)
             .map_err(Error::Snappy),
         #[cfg(feature = "zstd")]
-        super::CompressionAlgorithm::Zstd => {
+        CompressionAlgorithm::Zstd => {
             let range = zstd_compression::compression_level_range();
             match cmp.level {
                 lvl if range.contains(&lvl) => {
@@ -249,7 +284,7 @@ pub fn compress_to(data: &[u8], dst: &mut [u8], cmp: Compression) -> Result<usiz
             }
         }
         #[cfg(any(feature = "lz4", feature = "lz4-std"))]
-        super::CompressionAlgorithm::Lz4 => lz4_flex::compress_into(data, &mut dst[4..])
+        CompressionAlgorithm::Lz4 => lz4_flex::compress_into(data, &mut dst[4..])
             .map(|size| {
                 dst[..4].copy_from_slice((size as u32).to_le_bytes().as_ref());
                 size
@@ -272,11 +307,11 @@ pub fn compress_to(data: &[u8], dst: &mut [u8], cmp: Compression) -> Result<usiz
 pub fn compress_into_vec(data: &[u8], cmp: Compression) -> Result<Vec<u8>, Error> {
     match cmp.algo {
         #[cfg(feature = "snappy")]
-        super::CompressionAlgorithm::Snappy => snap::raw::Encoder::new()
+        CompressionAlgorithm::Snappy => snap::raw::Encoder::new()
             .compress_vec(data)
             .map_err(Error::Snappy),
         #[cfg(feature = "zstd")]
-        super::CompressionAlgorithm::Zstd => {
+        CompressionAlgorithm::Zstd => {
             let range = zstd_compression::compression_level_range();
             match cmp.level {
                 lvl if range.contains(&lvl) => zstd_compression::encode_all(data, lvl),
@@ -286,7 +321,7 @@ pub fn compress_into_vec(data: &[u8], cmp: Compression) -> Result<Vec<u8>, Error
             .map_err(Error::Zstd)
         }
         #[cfg(any(feature = "lz4", feature = "lz4-std"))]
-        super::CompressionAlgorithm::Lz4 => Ok(lz4_flex::compress_prepend_size(data)),
+        CompressionAlgorithm::Lz4 => Ok(lz4_flex::compress_prepend_size(data)),
         _ => Ok(data.to_vec()),
     }
 }
@@ -295,15 +330,15 @@ pub fn compress_into_vec(data: &[u8], cmp: Compression) -> Result<Vec<u8>, Error
 pub fn decompress_to(data: &[u8], dst: &mut [u8], cmp: Compression) -> Result<usize, Error> {
     match cmp.algo {
         #[cfg(feature = "snappy")]
-        super::CompressionAlgorithm::Snappy => snap::raw::Decoder::new()
+        CompressionAlgorithm::Snappy => snap::raw::Decoder::new()
             .decompress(data, dst)
             .map_err(Error::Snappy),
         #[cfg(feature = "zstd")]
-        super::CompressionAlgorithm::Zstd => {
+        CompressionAlgorithm::Zstd => {
             zstd_compression::bulk::decompress_to_buffer(data, dst).map_err(Error::Zstd)
         }
         #[cfg(any(feature = "lz4", feature = "lz4-std"))]
-        super::CompressionAlgorithm::Lz4 => lz4_flex::decompress_into(&data[4..], dst)
+        CompressionAlgorithm::Lz4 => lz4_flex::decompress_into(&data[4..], dst)
             .map_err(|e| Error::Lz4(Lz4Error::Decompression(e))),
         _ => {
             if data.len() > dst.len() {
@@ -322,15 +357,13 @@ pub fn decompress_to(data: &[u8], dst: &mut [u8], cmp: Compression) -> Result<us
 pub fn decompress_into_vec(data: &[u8], cmp: Compression) -> Result<Vec<u8>, Error> {
     match cmp.algo {
         #[cfg(feature = "snappy")]
-        super::CompressionAlgorithm::Snappy => snap::raw::Decoder::new()
+        CompressionAlgorithm::Snappy => snap::raw::Decoder::new()
             .decompress_vec(data)
             .map_err(Error::Snappy),
         #[cfg(feature = "zstd")]
-        super::CompressionAlgorithm::Zstd => {
-            zstd_compression::decode_all(data).map_err(Error::Zstd)
-        }
+        CompressionAlgorithm::Zstd => zstd_compression::decode_all(data).map_err(Error::Zstd),
         #[cfg(any(feature = "lz4", feature = "lz4-std"))]
-        super::CompressionAlgorithm::Lz4 => lz4_flex::decompress_size_prepended(data)
+        CompressionAlgorithm::Lz4 => lz4_flex::decompress_size_prepended(data)
             .map_err(|e| Error::Lz4(Lz4Error::Decompression(e))),
         _ => Ok(data.to_vec()),
     }
@@ -340,9 +373,9 @@ pub fn decompress_into_vec(data: &[u8], cmp: Compression) -> Result<Vec<u8>, Err
 pub fn max_encoded_len(cmp: Compression, sz: usize) -> usize {
     match cmp.algo {
         #[cfg(feature = "snappy")]
-        super::CompressionAlgorithm::Snappy => snap::raw::max_compress_len(sz),
+        CompressionAlgorithm::Snappy => snap::raw::max_compress_len(sz),
         #[cfg(feature = "zstd")]
-        super::CompressionAlgorithm::Zstd => {
+        CompressionAlgorithm::Zstd => {
             let low_limit = 128 << 10; // 128 kb
             let margin = if sz < low_limit {
                 (low_limit - sz) >> 11
@@ -352,7 +385,7 @@ pub fn max_encoded_len(cmp: Compression, sz: usize) -> usize {
             sz + (sz >> 8) + margin
         }
         #[cfg(any(feature = "lz4", feature = "lz4-std"))]
-        super::CompressionAlgorithm::Lz4 => {
+        CompressionAlgorithm::Lz4 => {
             lz4_flex::block::get_maximum_output_size(sz) + core::mem::size_of::<u32>()
         }
         _ => sz,
@@ -362,16 +395,16 @@ pub fn max_encoded_len(cmp: Compression, sz: usize) -> usize {
 macro_rules! impl_compression_algo_converter {
         ($($ty:ty),+ $(,)?) => {
             $(
-                impl From<$ty> for super::CompressionAlgorithm {
-                    fn from(val: $ty) -> super::CompressionAlgorithm {
+                impl From<$ty> for CompressionAlgorithm {
+                    fn from(val: $ty) -> CompressionAlgorithm {
                         match val {
                             #[cfg(feature = "snappy")]
-                            1 => super::CompressionAlgorithm::Snappy,
+                            1 => CompressionAlgorithm::Snappy,
                             #[cfg(feature = "zstd")]
-                            2 => super::CompressionAlgorithm::Zstd,
+                            2 => CompressionAlgorithm::Zstd,
                             #[cfg(any(feature = "lz4", feature = "lz4-std"))]
-                            3 => super::CompressionAlgorithm::Lz4,
-                            _ => super::CompressionAlgorithm::None,
+                            3 => CompressionAlgorithm::Lz4,
+                            _ => CompressionAlgorithm::None,
                         }
                     }
                 }

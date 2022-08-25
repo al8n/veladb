@@ -52,15 +52,15 @@ impl Header {
 #[derive(Debug)]
 pub(crate) struct BBlock {
     data: UnsafeCell<Buffer>,
-    // Base key for the current block.
+    /// Base key for the current block.
     base_key: Key,
-    // Offsets of entries present in current block.
+    /// Offsets of entries present in current block.
     entry_offsets: Vec<u32>,
-    // Points to the end offset of the block.
+    /// Points to the end offset of the block.
     end: AtomicUsize,
 }
 
-/// Safety: we will not concurrently read/write data
+/// Safety: we never concurrently read/write data in `BBlock`
 unsafe impl Send for BBlock {}
 unsafe impl Sync for BBlock {}
 

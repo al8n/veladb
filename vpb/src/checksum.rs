@@ -1,21 +1,41 @@
-/// Tells when should DB verify checksum for SSTable blocks.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-#[repr(u8)]
-pub enum ChecksumVerificationMode {
-    /// Indicates DB should not verify checksum for SSTable blocks.
-    NoVerification = 0,
-    /// Indicates checksum should be verified while opening SSTtable.
-    OnTableRead = 1,
-    /// Indicates checksum should be verified on every SSTable block read.
-    OnBlockRead = 2,
-    /// Indicates checksum should be verified
-    /// on SSTable opening and on every block read.
-    OnTableAndBlockRead = 3,
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Checksum {
+    /// For storing type of Checksum algorithm used
+    #[prost(enumeration = "ChecksumAlgorithm", tag = "1")]
+    pub algo: i32,
+    #[prost(uint64, tag = "2")]
+    pub sum: u64,
 }
 
-impl Copy for super::Checksum {}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ChecksumAlgorithm {
+    Crc32c = 0,
+    #[cfg(any(feature = "xxhash64", feature = "xxhash64-std"))]
+    XxHash64 = 1,
+    #[cfg(any(feature = "sea", feature = "sea-std"))]
+    SeaHash = 2,
+}
 
-impl super::Checksum {
+impl ChecksumAlgorithm {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub const fn as_str_name(&self) -> &'static str {
+        match self {
+            ChecksumAlgorithm::Crc32c => "CRC32C",
+            #[cfg(any(feature = "xxhash64", feature = "xxhash64-std"))]
+            ChecksumAlgorithm::XxHash64 => "XXHash64",
+            #[cfg(any(feature = "sea", feature = "sea-std"))]
+            ChecksumAlgorithm::SeaHash => "SeaHash",
+        }
+    }
+}
+
+impl Copy for Checksum {}
+
+impl Checksum {
     pub const fn new() -> Self {
         Self { algo: 0, sum: 0 }
     }

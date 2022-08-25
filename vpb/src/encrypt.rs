@@ -3,14 +3,34 @@ use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherError};
 #[cfg(any(feature = "aes", feature = "aes-std"))]
 use aes::{Aes128, Aes192, Aes256};
 
-use super::EncryptionAlgorithm;
-
 pub const BLOCK_SIZE: usize = 16;
 
-impl super::EncryptionAlgorithm {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum EncryptionAlgorithm {
+    None = 0,
+    #[cfg(any(feature = "aes", feature = "aes-std"))]
+    Aes = 1,
+}
+
+impl EncryptionAlgorithm {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            EncryptionAlgorithm::None => "None",
+            #[cfg(any(feature = "aes", feature = "aes-std"))]
+            EncryptionAlgorithm::Aes => "Aes",
+        }
+    }
+}
+
+impl EncryptionAlgorithm {
     #[inline]
     pub const fn is_none(&self) -> bool {
-        matches!(self, super::EncryptionAlgorithm::None)
+        matches!(self, EncryptionAlgorithm::None)
     }
 }
 

@@ -13,11 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-// Use protos/gen.sh to generate .pb.go files.
 syntax = "proto3";
 
-package ty;
+package pb;
 
 message KV {
   bytes key = 1;

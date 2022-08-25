@@ -7,6 +7,7 @@ description = "(WIP) badger's ssttable implementation"
 
 [features]
 default = ["std"]
+full = ["std", "tracing/default"]
 std = ["stretto/sync", "zallocator/std", "zallocator/pool", "vpb/std", "crossbeam-channel", "crossbeam-utils", "tracing/std", "triomphe/std", "num_cpus", "scopeguard"]
 nightly = ["zallocator/nightly"]
 

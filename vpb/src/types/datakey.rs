@@ -1,6 +1,6 @@
 use kvstructs::bytes::Bytes;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DataKey {
     pub key_id: u64,
     pub data: Bytes,

@@ -134,6 +134,11 @@ impl BlockProcessor {
 
     fn spawn(self) {
         std::thread::spawn(move || {
+            #[cfg(feature = "tracing")]
+            {
+                tracing::debug!(target: "table_builder", info = "starting block processor...");
+            }
+
             let Self {
                 alloc,
                 compressed_size,
@@ -175,7 +180,14 @@ impl BlockProcessor {
         let buffer = alloc.allocate_unchecked(data.max_encoded_len(compression_algo) as u64);
         let end = data
             .compress_to(buffer.as_mut_slice(), compression_algo)
-            .expect("Error while compressing block in table builder.");
+            .map_err(|e| {
+                #[cfg(feature = "tracing")]
+                {
+                    tracing::error!(target: "table_builder", err=%e, info = "error while compressing block in table builder.");
+                }
+                e
+            })
+            .unwrap();
         buffer.slice(..end)
     }
 
@@ -190,7 +202,14 @@ impl BlockProcessor {
                 let buffer = alloc.allocate_unchecked((data.capacity() + iv.len()) as u64);
                 let slice = buffer.as_mut_slice();
                 data.encrypt_to(&mut slice[..data.capacity()], key, &iv, algo)
-                    .expect("Error while encrypting block in table builder.");
+                    .map_err(|e| {
+                        #[cfg(feature = "tracing")]
+                        {
+                            tracing::error!(target: "table_builder", err=%e, info = "error while encrypting block in table builder.");
+                        }
+                        e
+                    })
+                    .unwrap();
                 slice[data.capacity()..].copy_from_slice(&iv);
                 buffer
             }
