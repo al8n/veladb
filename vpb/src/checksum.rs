@@ -36,6 +36,9 @@ impl ChecksumAlgorithm {
 impl Copy for Checksum {}
 
 impl Checksum {
+    /// The size of the checksum value in memory
+    pub const ENCODED_SIZE: usize = core::mem::size_of::<u64>() + core::mem::size_of::<u32>();
+
     pub const fn new() -> Self {
         Self { algo: 0, sum: 0 }
     }

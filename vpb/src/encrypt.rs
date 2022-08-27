@@ -32,6 +32,11 @@ impl EncryptionAlgorithm {
     pub const fn is_none(&self) -> bool {
         matches!(self, EncryptionAlgorithm::None)
     }
+
+    #[inline]
+    pub const fn is_some(&self) -> bool {
+        !matches!(self, EncryptionAlgorithm::None)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +65,11 @@ impl Encryption {
     }
 
     #[inline]
+    pub const fn is_some(&self) -> bool {
+        self.algo.is_some()
+    }
+
+    #[inline]
     pub fn secret(&self) -> &[u8] {
         self.secret.as_ref()
     }
@@ -68,6 +78,12 @@ impl Encryption {
     #[inline]
     pub fn set_secret(&mut self, secret: kvstructs::bytes::Bytes) {
         self.secret = secret;
+    }
+
+    /// The block size for encryption algorithm
+    #[inline]
+    pub const fn block_size(&self) -> usize {
+        block_size(self.algo)
     }
 }
 
@@ -262,6 +278,16 @@ pub trait Encryptor {
 
 impl<T> Encryptor for T {}
 
+/// Returns the block size of the encryption algorithm
+#[inline(always)]
+pub const fn block_size(algo: EncryptionAlgorithm) -> usize {
+    match algo {
+        EncryptionAlgorithm::None => 0,
+        #[cfg(any(feature = "aes", feature = "aes-std"))]
+        EncryptionAlgorithm::Aes => BLOCK_SIZE,
+    }
+}
+
 /// Encrypts data with IV.
 /// Can be used for both encryption and decryption.
 ///
@@ -353,17 +379,15 @@ fn aes_encrypt_in(dst: &mut [u8], key: &[u8], iv: &[u8]) -> Result<(), EncryptEr
 }
 
 /// generates IV.
-#[cfg(any(feature = "aes", feature = "aes-std"))]
-#[inline]
 pub fn random_iv() -> [u8; BLOCK_SIZE] {
-    #[cfg(feature = "aes-std")]
+    #[cfg(feature = "std")]
     {
         use rand::{thread_rng, Rng};
         let mut rng = thread_rng();
         rng.gen::<[u8; BLOCK_SIZE]>()
     }
 
-    #[cfg(not(feature = "aes-std"))]
+    #[cfg(not(feature = "std"))]
     {
         use rand::{rngs::OsRng, RngCore};
         let mut key = [0u8; BLOCK_SIZE];

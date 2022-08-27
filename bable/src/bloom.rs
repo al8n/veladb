@@ -127,6 +127,11 @@ impl Filter {
     pub fn into_vec(self) -> Vec<u8> {
         self.0.to_vec()
     }
+
+    #[inline]
+    pub fn into_bytes(self) -> Bytes {
+        self.0
+    }
 }
 
 pub trait MayContain {

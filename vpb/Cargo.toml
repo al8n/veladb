@@ -12,7 +12,7 @@ std = ["prost/std", "crc32fast/std", "kvstructs/default"]
 js = ["getrandom/js"]
 
 # enable aes encryption
-aes = ["aes/zeroize", "ctr/zeroize", "rand"]
+aes = ["aes/zeroize", "ctr/zeroize"]
 aes-std = ["aes", "ctr/std", "rand/default"]
 
 # enable seahash checksum
@@ -20,7 +20,7 @@ sea = ["seahash", "lazy_static"]
 sea-std = ["seahash/use_std", "sea"]
 
 # enable xxhash64 checksum
-xxhash64 = ["xxhash-rust/xxh64", "rand", "lazy_static"]
+xxhash64 = ["xxhash-rust/xxh64", "lazy_static"]
 xxhash64-std = ["rand/default", "xxhash64"]
 
 # enable snappy compression
@@ -39,7 +39,7 @@ getrandom = { version = "0.2", optional = true }
 kvstructs = { version = "0.0.23", optional = true, default-features = false }
 lazy_static = { version = "1.4", optional = true }
 prost = { version = "0.11", default-features = false, features = ["prost-derive"] }
-rand = { version = "0.8", optional = true, default-features = false }
+rand = { version = "0.8", default-features = false }
 
 serde = { version = "1", default-features = false, optional = true, features = ["derive"] }
 

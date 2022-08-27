@@ -4,6 +4,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub enum Error {
     ChecksumMismatch,
     AllocateOverflow(zallocator::Overflow),
+    EncryptError(vpb::encrypt::EncryptError),
     #[cfg(feature = "std")]
     IO(std::io::Error),
 }
@@ -21,6 +22,12 @@ impl From<zallocator::Overflow> for Error {
     }
 }
 
+impl From<vpb::encrypt::EncryptError> for Error {
+    fn from(e: vpb::encrypt::EncryptError) -> Self {
+        Error::EncryptError(e)
+    }
+}
+
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
@@ -28,6 +35,7 @@ impl core::fmt::Display for Error {
             Error::AllocateOverflow(o) => write!(f, "allocate overflow: {}", o),
             #[cfg(feature = "std")]
             Error::IO(e) => write!(f, "io error: {}", e),
+            Error::EncryptError(e) => write!(f, "{}", e),
         }
     }
 }

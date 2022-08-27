@@ -8,9 +8,11 @@ description = "(WIP) badger's ssttable implementation"
 [features]
 default = ["std"]
 full = ["std", "tracing/default"]
-std = ["stretto/sync", "zallocator/std", "zallocator/pool", "vpb/std", "crossbeam-channel", "crossbeam-utils", "tracing/std", "triomphe/std", "num_cpus", "scopeguard"]
+std = ["stretto/sync", "zallocator/std", "zallocator/pool", "vpb/std", "crossbeam-channel", "crossbeam-utils", "tracing/std", "triomphe/std", "num_cpus", "scopeguard", "fmmap"]
 nightly = ["zallocator/nightly"]
 
+# if you make sure use single thread with no_std
+rc = []
 
 # enable aes encryption
 aes = ["vpb/aes"]
@@ -28,6 +30,7 @@ xxhash64-std = ["vpb/xxhash64-std"]
 [dependencies]
 crossbeam-channel = { version = "0.5", optional = true }
 crossbeam-utils = { version = "0.8", optional = true }
+fmmap = { version = "0.3", optional = true }
 num_cpus = { version = "1.13", optional = true }
 stretto = { version = "0.6", optional = true, default-features = false }
 scopeguard = { version = "1.1", optional = true }

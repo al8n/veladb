@@ -65,6 +65,11 @@ impl Compression {
     pub const fn is_none(&self) -> bool {
         matches!(self.algo, CompressionAlgorithm::None)
     }
+
+    #[inline]
+    pub const fn is_some(&self) -> bool {
+        !matches!(self.algo, CompressionAlgorithm::None)
+    }
 }
 
 impl prost::Message for Compression {

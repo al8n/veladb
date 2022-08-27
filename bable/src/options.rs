@@ -1,5 +1,5 @@
-use crate::sync::Arc;
-use vpb::{Compression, Encryption};
+use crate::RefCounter;
+use vpb::{ChecksumAlgorithm, Compression, Encryption};
 use zallocator::pool::AllocatorPool;
 
 /// Tells when should DB verify checksum for SSTable blocks.
@@ -31,6 +31,9 @@ pub struct TableOptions {
     /// checksum_verification_mode is the checksum verification mode for Table.
     checksum_verification_mode: ChecksumVerificationMode,
 
+    /// Indicates the checksum algorithm used for block compression.
+    checksum: ChecksumAlgorithm,
+
     /// Indicates the compression algorithm used for block compression.
     compression: Compression,
 
@@ -45,13 +48,13 @@ pub struct TableOptions {
     block_size: usize,
 
     /// Block cache is used to cache decompressed and decrypted blocks.
-    // block_cache: Option<Arc<Cache>>,
-    // index_cache: Option<Arc<Cache>>,
-    alloc_pool: Arc<AllocatorPool>,
+    // block_cache: Option<RefCounter<Cache>>,
+    // index_cache: Option<RefCounter<Cache>>,
+    alloc_pool: RefCounter<AllocatorPool>,
 }
 
 impl TableOptions {
-    pub const fn default_with_pool(pool: Arc<AllocatorPool>) -> Self {
+    pub fn default_with_pool(pool: AllocatorPool) -> Self {
         Self {
             ro: false,
             metrics_enabled: true,
@@ -60,8 +63,9 @@ impl TableOptions {
             compression: Compression::new(),
             bloom_false_positive: 0.01,
             block_size: 4 * 1024,
-            alloc_pool: pool,
+            alloc_pool: RefCounter::new(pool),
             encryption: Encryption::new(),
+            checksum: ChecksumAlgorithm::Crc32c,
         }
     }
 
@@ -144,6 +148,19 @@ impl TableOptions {
         self
     }
 
+    /// get the checksum algorithm for `Table`.
+    #[inline]
+    pub const fn checksum(&self) -> ChecksumAlgorithm {
+        self.checksum
+    }
+
+    /// set the checksum algorithm for `Table`.
+    #[inline]
+    pub const fn set_checksum(mut self, checksum: ChecksumAlgorithm) -> Self {
+        self.checksum = checksum;
+        self
+    }
+
     /// get the checksum verification mode for `Table`.
     #[inline]
     pub const fn checksum_verification_mode(&self) -> ChecksumVerificationMode {
@@ -191,8 +208,8 @@ impl TableOptions {
 
     /// set the allocator pool
     #[inline]
-    pub fn set_allocator_pool(mut self, val: Arc<AllocatorPool>) -> Self {
-        self.alloc_pool = val;
+    pub fn set_allocator_pool(mut self, val: AllocatorPool) -> Self {
+        self.alloc_pool = RefCounter::new(val);
         self
     }
 }
