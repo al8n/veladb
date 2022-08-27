@@ -5,8 +5,18 @@ pub enum Error {
     ChecksumMismatch,
     AllocateOverflow(zallocator::Overflow),
     EncryptError(vpb::encrypt::EncryptError),
+    DecodeError(vpb::prost::DecodeError),
     #[cfg(feature = "std")]
     IO(std::io::Error),
+    #[cfg(feature = "std")]
+    MmapError(fmmap::error::Error),
+}
+
+#[cfg(feature = "std")]
+impl From<fmmap::error::Error> for Error {
+    fn from(err: fmmap::error::Error) -> Self {
+        Error::MmapError(err)
+    }
 }
 
 #[cfg(feature = "std")]
@@ -28,6 +38,12 @@ impl From<vpb::encrypt::EncryptError> for Error {
     }
 }
 
+impl From<vpb::prost::DecodeError> for Error {
+    fn from(e: vpb::prost::DecodeError) -> Self {
+        Error::DecodeError(e)
+    }
+}
+
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
@@ -36,6 +52,9 @@ impl core::fmt::Display for Error {
             #[cfg(feature = "std")]
             Error::IO(e) => write!(f, "io error: {}", e),
             Error::EncryptError(e) => write!(f, "{}", e),
+            #[cfg(feature = "std")]
+            Error::MmapError(e) => write!(f, "mmap error: {}", e),
+            Error::DecodeError(e) => write!(f, "decode error: {}", e),
         }
     }
 }

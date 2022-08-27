@@ -1,6 +1,23 @@
-use super::error::*;
-use vpb::{checksum::calculate_checksum, kvstructs::bytes::Bytes, ChecksumAlgorithm, Marshaller};
+use crate::{options::TableOptions, RefCounter};
 
+use super::error::*;
+use vpb::{
+    checksum::calculate_checksum,
+    kvstructs::{bytes::Bytes, Key},
+    ChecksumAlgorithm, Marshaller,
+};
+
+#[cfg(not(feature = "std"))]
+mod no_std;
+#[cfg(not(feature = "std"))]
+use no_std::*;
+
+#[cfg(feature = "std")]
+mod standard;
+#[cfg(feature = "std")]
+use standard::*;
+
+const FILE_SUFFIX: &str = ".sst";
 const INT_SIZE: usize = core::mem::size_of::<usize>();
 
 pub struct Block {
@@ -44,4 +61,19 @@ impl Block {
         }
         Ok(())
     }
+}
+
+#[derive(Copy, Clone)]
+struct CheapIndex {
+    max_version: u64,
+    key_count: u32,
+    uncompressed_size: u32,
+    on_disk_size: u32,
+    bloom_filter_length: usize,
+    offsets_length: usize,
+    num_entries: usize,
+}
+
+pub struct Table {
+    inner: RefCounter<Inner>,
 }

@@ -73,7 +73,7 @@ pub trait Checksumer {
         calculate_checksum(self.as_ref(), algorithm)
     }
 
-    /// Validates the checksum for the data against the given expected checksum.
+    /// Validates the checksum for the data against the given expected checksum. Return `true` if the checksum is valid.
     fn verify_checksum(&self, expected: u64, algo: super::ChecksumAlgorithm) -> bool
     where
         Self: AsRef<[u8]>,
@@ -96,7 +96,7 @@ pub fn calculate_checksum(data: &[u8], algorithm: super::ChecksumAlgorithm) -> s
     }
 }
 
-/// Validates the checksum for the data against the given expected checksum.
+/// Validates the checksum for the data against the given expected checksum. Return `true` if the checksum is valid.
 #[inline]
 pub fn verify_checksum(data: &[u8], expected: u64, algo: super::ChecksumAlgorithm) -> bool {
     calculate_checksum(data, algo).sum == expected
