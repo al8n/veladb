@@ -16,12 +16,12 @@ aes = ["aes/zeroize", "ctr/zeroize"]
 aes-std = ["aes", "ctr/std", "rand/default"]
 
 # enable seahash checksum
-sea = ["seahash", "lazy_static"]
-sea-std = ["seahash/use_std", "sea"]
+sea = ["seahash", "lazy_static/spin_no_std"]
+sea-std = ["seahash/use_std", "sea", "lazy_static"]
 
 # enable xxhash64 checksum
-xxhash64 = ["xxhash-rust/xxh64", "lazy_static"]
-xxhash64-std = ["rand/default", "xxhash64"]
+xxhash64 = ["xxhash-rust/xxh64", "lazy_static/spin_no_std"]
+xxhash64-std = ["rand/default", "xxhash64", "lazy_static"]
 
 # enable snappy compression
 snappy = ["snap", "std"]

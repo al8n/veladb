@@ -1,3 +1,9 @@
+#[cfg(any(feature = "sea", feature = "sea-std"))]
+pub use seahash::*;
+
+#[cfg(any(feature = "xxhash64", feature = "xxhash64-std"))]
+pub use xxhash_rust::xxh64::*;
+
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Checksum {
     /// For storing type of Checksum algorithm used

@@ -3,6 +3,12 @@
 #[cfg(feature = "std")]
 extern crate std;
 
+#[cfg(feature = "std")]
+use std::collections::{hash_map::Entry, HashMap};
+
+#[cfg(not(feature = "std"))]
+use hashbrown::{hash_map::Entry, HashMap};
+
 extern crate alloc;
 
 pub use vpb;
@@ -19,6 +25,10 @@ pub use builder::*;
 
 pub mod bloom;
 mod options;
+pub use options::TableOptions;
+
+#[cfg(feature = "metrics")]
+pub mod metrics;
 
 #[cfg(feature = "std")]
 mod sync {

@@ -10,6 +10,8 @@ pub enum Error {
     IO(std::io::Error),
     #[cfg(feature = "std")]
     MmapError(fmmap::error::Error),
+    #[cfg(feature = "std")]
+    CacheError(stretto::CacheError),
 }
 
 #[cfg(feature = "std")]
@@ -44,6 +46,12 @@ impl From<vpb::prost::DecodeError> for Error {
     }
 }
 
+impl From<stretto::CacheError> for Error {
+    fn from(e: stretto::CacheError) -> Self {
+        Error::CacheError(e)
+    }
+}
+
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
@@ -55,6 +63,8 @@ impl core::fmt::Display for Error {
             #[cfg(feature = "std")]
             Error::MmapError(e) => write!(f, "mmap error: {}", e),
             Error::DecodeError(e) => write!(f, "decode error: {}", e),
+            #[cfg(feature = "std")]
+            Error::CacheError(e) => write!(f, "cache error: {}", e),
         }
     }
 }

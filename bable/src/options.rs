@@ -1,4 +1,7 @@
-use crate::RefCounter;
+use crate::{
+    cache::{BlockCache, IndexCache},
+    RefCounter,
+};
 use vpb::{ChecksumAlgorithm, Compression, Encryption};
 use zallocator::pool::AllocatorPool;
 
@@ -18,7 +21,7 @@ pub enum ChecksumVerificationMode {
 }
 
 /// TableOptions contains configurable options for Table/Builder.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TableOptions {
     // Options for Opening/Building Table.
     /// open table in read only mode
@@ -48,8 +51,8 @@ pub struct TableOptions {
     block_size: usize,
 
     /// Block cache is used to cache decompressed and decrypted blocks.
-    // block_cache: Option<RefCounter<Cache>>,
-    // index_cache: Option<RefCounter<Cache>>,
+    block_cache: Option<BlockCache>,
+    index_cache: Option<IndexCache>,
     alloc_pool: RefCounter<AllocatorPool>,
 }
 
@@ -66,6 +69,8 @@ impl TableOptions {
             alloc_pool: RefCounter::new(pool),
             encryption: Encryption::new(),
             checksum: ChecksumAlgorithm::Crc32c,
+            block_cache: None,
+            index_cache: None,
         }
     }
 
@@ -210,6 +215,32 @@ impl TableOptions {
     #[inline]
     pub fn set_allocator_pool(mut self, val: AllocatorPool) -> Self {
         self.alloc_pool = RefCounter::new(val);
+        self
+    }
+
+    /// get the blocks cache
+    #[inline]
+    pub const fn block_cache(&self) -> Option<&BlockCache> {
+        self.block_cache.as_ref()
+    }
+
+    /// set the blocks cache
+    #[inline]
+    pub fn set_block_cache(mut self, cache: BlockCache) -> Self {
+        self.block_cache = Some(cache);
+        self
+    }
+
+    /// get the table index cache
+    #[inline]
+    pub const fn index_cache(&self) -> Option<&IndexCache> {
+        self.index_cache.as_ref()
+    }
+
+    /// set the index cache
+    #[inline]
+    pub fn set_index_cache(mut self, cache: IndexCache) -> Self {
+        self.index_cache = Some(cache);
         self
     }
 }

@@ -2,12 +2,12 @@ use fmmap::{MmapFileExt, MmapFileMut};
 use vpb::{
     checksum::Checksumer,
     encrypt::Encryptor,
-    kvstructs::{bytes::Bytes, Key},
+    kvstructs::{bytes::Bytes, Key, KeyExt},
     BlockOffset, Checksum, Compression, Marshaller, TableIndex,
 };
 
 use super::CheapIndex;
-use crate::{error::*, options::TableOptions, sync::AtomicU32, RefCounter};
+use crate::{bloom::MayContain, error::*, options::TableOptions, sync::AtomicU32, RefCounter};
 
 pub(super) struct Inner {
     mmap: MmapFileMut,
@@ -15,7 +15,7 @@ pub(super) struct Inner {
     table_size: usize,
 
     // Use fetch_index to access.
-    index: TableIndex,
+    index: RefCounter<TableIndex>,
     cheap: CheapIndex,
 
     // For file garbage collection.
@@ -77,6 +77,31 @@ impl Inner {
         self.opts.compression()
     }
 
+    /// Splits the table into at least n ranges based on the block offsets.
+    pub(super) fn key_splits(&self, idx: usize, prefix: &[u8]) -> Vec<Key> {
+        let mut res = Vec::new();
+        if idx == 0 {
+            return res;
+        }
+
+        let offsets_len = self.offsets_length();
+        let jump = (offsets_len / idx).max(1);
+        let mut idx = 0;
+
+        while idx < offsets_len {
+            if idx >= offsets_len {
+                idx = offsets_len - 1;
+            }
+            let bo = self.offsets(idx).unwrap();
+
+            if bo.key.has_prefix(prefix) {
+                res.push(bo.key.clone().into());
+            }
+            idx += offsets_len;
+        }
+        res
+    }
+
     #[inline]
     fn cheap_index(&self) -> &CheapIndex {
         &self.cheap
@@ -95,6 +120,36 @@ impl Inner {
     #[inline(always)]
     fn read_no_fail(&self, offset: usize, sz: usize) -> &[u8] {
         self.mmap.bytes(offset, sz).unwrap()
+    }
+
+    /// Returns true if and only if the table does not have the key hash.
+    /// It does a bloom filter lookup.
+    #[inline]
+    pub(super) fn contains_hash(&self, hash: u32) -> bool {
+        if !self.has_bloom_filter {
+            return false;
+        }
+
+        #[cfg(feature = "metrics")]
+        {
+            crate::metrics::add_bloom_hits(crate::metrics::DOES_NOT_HAVE_ALL, 1)
+        }
+        let index = self.fetch_index();
+        let may_contain = index.bloom_filter.may_contain(hash);
+        #[cfg(feature = "metrics")]
+        {
+            if !may_contain {
+                crate::metrics::add_bloom_hits(crate::metrics::DOES_NOT_HAVE_HIT, 1)
+            }
+        }
+
+        return !may_contain;
+    }
+
+    /// Returns true if all the keys in the table are prefixed by the given prefix.
+    #[inline]
+    pub(super) fn covered_by_prefix(&self, prefix: &[u8]) -> bool {
+        self.biggest.parse_key().has_prefix(prefix) && self.smallest.parse_key().has_prefix(prefix)
     }
 
     fn init_biggest_and_smallest(&mut self) {
@@ -199,10 +254,40 @@ impl Inner {
 
         if !self.should_decrypt() {
             // If there's no encryption, this points to the mmap'ed buffer.
-            self.index = index;
+            self.index = RefCounter::new(index);
         }
         self.has_bloom_filter = has_bloom_filter;
         Ok(bo)
+    }
+
+    fn fetch_index(&self) -> RefCounter<TableIndex> {
+        if !self.should_decrypt() {
+            return self.index.clone();
+        }
+
+        match self.opts.index_cache() {
+            Some(cache) => match cache.get(&self.id) {
+                Some(index) => index.as_ref().clone(),
+                None => {
+                    let index = self.read_table_index().map(RefCounter::new).map_err(|e| {
+                            #[cfg(feature = "tracing")]
+                            {
+                                tracing::error!(target: "table", info = "fail to read table idex", err = %e);
+                            }
+                            e
+                        }).unwrap();
+                    cache.insert(self.id, index.clone(), self.index_len as i64);
+                    index
+                }
+            },
+            None => {
+                panic!("Index Cache must be set for encrypted workloads");
+            }
+        }
+    }
+
+    fn offsets(&self, idx: usize) -> Option<&BlockOffset> {
+        self.fetch_index().offsets.get(idx)
     }
 
     /// read_table_index reads table index from the sst and returns its pb format.
