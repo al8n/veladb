@@ -30,12 +30,20 @@ impl EncryptionAlgorithm {
 impl EncryptionAlgorithm {
     #[inline]
     pub const fn is_none(&self) -> bool {
-        matches!(self, EncryptionAlgorithm::None)
+        match self {
+            #[cfg(any(feature = "aes", feature = "aes-std"))]
+            EncryptionAlgorithm::Aes => false,
+            _ => true,
+        }
     }
 
     #[inline]
     pub const fn is_some(&self) -> bool {
-        !matches!(self, EncryptionAlgorithm::None)
+        match self {
+            #[cfg(any(feature = "aes", feature = "aes-std"))]
+            EncryptionAlgorithm::Aes => true,
+            _ => false,
+        }
     }
 }
 
@@ -72,6 +80,11 @@ impl Encryption {
     #[inline]
     pub fn secret(&self) -> &[u8] {
         self.secret.as_ref()
+    }
+
+    #[inline]
+    pub fn secret_bytes(&self) -> kvstructs::bytes::Bytes {
+        self.secret.clone()
     }
 
     /// Set the secret used to encrypt/decrypt the encrypted text.
@@ -296,14 +309,14 @@ pub const fn block_size(algo: EncryptionAlgorithm) -> usize {
 ///     - `EncryptionAlgorithm::None`: IV is ignored.
 #[inline]
 pub fn encrypt(
-    data: &mut [u8],
-    key: &[u8],
-    iv: &[u8],
+    _data: &mut [u8],
+    _key: &[u8],
+    _iv: &[u8],
     algo: EncryptionAlgorithm,
 ) -> Result<(), EncryptError> {
     match algo {
         #[cfg(any(feature = "aes", feature = "aes-std"))]
-        EncryptionAlgorithm::Aes => aes_encrypt_in(data, key, iv),
+        EncryptionAlgorithm::Aes => aes_encrypt_in(_data, _key, _iv),
         _ => Ok(()),
     }
 }
@@ -317,14 +330,14 @@ pub fn encrypt(
 #[inline]
 pub fn encrypt_to_vec(
     src: &[u8],
-    key: &[u8],
-    iv: &[u8],
+    _key: &[u8],
+    _iv: &[u8],
     algo: EncryptionAlgorithm,
 ) -> Result<Vec<u8>, EncryptError> {
     let mut dst = src.to_vec();
     match algo {
         #[cfg(any(feature = "aes", feature = "aes-std"))]
-        EncryptionAlgorithm::Aes => aes_encrypt_in(dst.as_mut(), key, iv).map(|_| dst),
+        EncryptionAlgorithm::Aes => aes_encrypt_in(dst.as_mut(), _key, _iv).map(|_| dst),
         _ => Ok(dst),
     }
 }
@@ -339,8 +352,8 @@ pub fn encrypt_to_vec(
 pub fn encrypt_to(
     dst: &mut [u8],
     src: &[u8],
-    key: &[u8],
-    iv: &[u8],
+    _key: &[u8],
+    _iv: &[u8],
     algo: EncryptionAlgorithm,
 ) -> Result<(), EncryptError> {
     if dst.len() != src.len() {
@@ -352,7 +365,7 @@ pub fn encrypt_to(
     dst.copy_from_slice(src);
     match algo {
         #[cfg(any(feature = "aes", feature = "aes-std"))]
-        EncryptionAlgorithm::Aes => aes_encrypt_in(dst, key, iv),
+        EncryptionAlgorithm::Aes => aes_encrypt_in(dst, _key, _iv),
         _ => Ok(()),
     }
 }

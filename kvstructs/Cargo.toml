@@ -1,0 +1,23 @@
+[package]
+name = "kvstructs"
+version = "0.0.24"
+edition = "2021"
+repository = "https://github.com/al8n/kvstructs"
+description = "General basic key-value structs for Key-Value based storages."
+license = "MIT/Apache-2.0"
+keywords = ["kv", "key-value", "data-structures", "key-value-store"]
+categories = ["data-structures", "no-std"]
+
+[features]
+default = ["std"]
+std = ["bytes/std"]
+nightly = []
+
+[dependencies]
+bytes = { version = "1.2", default-features = false }
+bitflags = "1.3"
+enum_dispatch = "0.3"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

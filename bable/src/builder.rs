@@ -24,13 +24,13 @@ mod no_std;
 
 const KB: usize = 1024;
 const MB: usize = KB * 1024;
-const MAX_ALLOCATOR_INITIAL_SIZE: usize = 256 << 20;
+pub const MAX_ALLOCATOR_INITIAL_SIZE: usize = 256 << 20;
 
 /// When a block is encrypted, it's length increases. We add 256 bytes of padding to
 /// handle cases when block size increases. This is an approximate number.
 const PADDING: usize = 256;
 
-const HEADER_SIZE: usize = core::mem::size_of::<Header>();
+pub const HEADER_SIZE: usize = core::mem::size_of::<Header>();
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(C)]
@@ -56,6 +56,16 @@ impl Header {
             overlap: u16::from_le_bytes(buf[..2].try_into().unwrap()),
             diff: u16::from_le_bytes(buf[2..].try_into().unwrap()),
         }
+    }
+
+    #[inline]
+    pub fn overlap(&self) -> u16 {
+        self.overlap
+    }
+
+    #[inline]
+    pub fn diff(&self) -> u16 {
+        self.diff
     }
 }
 
@@ -223,6 +233,10 @@ pub struct Builder {
 }
 
 impl Builder {
+    pub fn options(&self) -> RefCounter<TableOptions> {
+        self.opts.clone()
+    }
+
     /// The same as `insert` function but it also increments the internal
     /// `stale_data_size` counter. This value will be used to prioritize this table for
     /// compaction.

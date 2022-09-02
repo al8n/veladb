@@ -63,12 +63,28 @@ impl Compression {
 
     #[inline]
     pub const fn is_none(&self) -> bool {
-        matches!(self.algo, CompressionAlgorithm::None)
+        match self.algo {
+            #[cfg(feature = "snappy")] 
+            CompressionAlgorithm::Snappy => false,
+            #[cfg(feature = "zstd")]
+            CompressionAlgorithm::Zstd => false,
+            #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+            CompressionAlgorithm::Lz4 => false,
+            _ => true,
+        }
     }
 
     #[inline]
     pub const fn is_some(&self) -> bool {
-        !matches!(self.algo, CompressionAlgorithm::None)
+        match self.algo {
+            #[cfg(feature = "snappy")] 
+            CompressionAlgorithm::Snappy => true,
+            #[cfg(feature = "zstd")]
+            CompressionAlgorithm::Zstd => true,
+            #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+            CompressionAlgorithm::Lz4 => true,
+            _ => false,
+        } 
     }
 }
 

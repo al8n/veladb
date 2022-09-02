@@ -8,9 +8,12 @@ description = "(WIP) badger's ssttable implementation"
 [features]
 default = ["std"]
 full = ["std", "tracing/default"]
-std = ["stretto/sync", "zallocator/std", "zallocator/pool", "vpb/std", "vpb/sea-std", "vpb/xxhash64-std", "crossbeam-channel", "crossbeam-utils", "tracing/std", "triomphe/std", "num_cpus", "scopeguard", "fmmap", "parking_lot", "rand/std", "metrics"]
-metrics = ["lazy_static"]
-nightly = ["zallocator/nightly"]
+std = ["stretto/sync", "zallocator/std", "zallocator/threadpool", "vpb/std", "vpb/sea-std", "vpb/xxhash64-std", "crossbeam-channel", "crossbeam-utils", "tracing/std", "triomphe/std", "num_cpus", "scopeguard", "fmmap", "parking_lot", "rand/std"]
+singlethread = ["zallocator/core", "hashbrown"]
+
+metrics = ["mapcell", "lazy_static/spin_no_std"]
+metrics-std = ["mapcell/std", "lazy_static"]
+nightly = ["zallocator/nightly", "lru/nightly"]
 
 js = ["getrandom/js"]
 
@@ -21,30 +24,26 @@ rc = []
 aes = ["vpb/aes"]
 aes-std = ["vpb/aes-std"]
 
-# enable seahash checksum
-sea = ["vpb/sea"]
-sea-std = ["vpb/sea-std"]
-
-# enable xxhash64 checksum
-xxhash64 = ["vpb/xxhash64"]
-xxhash64-std = ["vpb/xxhash64-std"]
-
 inline-more = ["hashbrown/inline-more"]
 
 
 [dependencies]
 crossbeam-channel = { version = "0.5", optional = true }
 crossbeam-utils = { version = "0.8", optional = true }
+crossbeam-queue = { version = "0.3", default-features = false, features = ["alloc"] }
+enum_dispatch = { version = "0.3" }
 fmmap = { version = "0.3", optional = true }
-hashbrown = { version = "0.12", default-features = false }
 getrandom = { version = "0.2", optional = true, default-features = false }
-lazy_static = { version = "1.4", optional = true, default-features = false, features = ["spin_no_std"] }
+hashbrown = { version = "0.12", default-features = false, optional = true }
+lru = { version = "0.7", default-features = false }
+lazy_static = { version = "1.4", optional = true, default-features = false }
+mapcell = { path = "../mapcell", optional = true, default-features = false }
 num_cpus = { version = "1.13", optional = true }
 parking_lot = { version = "0.12", optional = true }
 rand = { version = "0.8", default-features = false }
-stretto = { version = "0.6", optional = true, default-features = false }
+stretto = { version = "0.7", optional = true, default-features = false }
 scopeguard = { version = "1.1", optional = true }
 tracing = { version = "0.1", optional = true, default-features = false }
 triomphe = { version = "0.1.7", default-features = false }
 vpb = { path = "../vpb", default-features = false, features = ["sea", "xxhash64"] }
-zallocator = { version = "0.2", default-features = false }
+zallocator = { path = "../zallocator", default-features = false }

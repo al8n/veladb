@@ -1,13 +1,13 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(feature = "nightly", feature(const_fn_floating_point_arithmetic))]
+#![cfg_attr(feature = "nightly", feature(const_fn_floating_point_arithmetic), feature(generic_associated_types))]
 #[cfg(feature = "std")]
 extern crate std;
 
-#[cfg(feature = "std")]
-use std::collections::{hash_map::Entry, HashMap};
+#[cfg(all(feature = "std", feature = "metrics"))]
+use std::collections::HashMap;
 
-#[cfg(not(feature = "std"))]
-use hashbrown::{hash_map::Entry, HashMap};
+#[cfg(all(not(feature = "std"), feature = "metrics"))]
+use hashbrown::HashMap;
 
 extern crate alloc;
 
@@ -66,6 +66,12 @@ impl<T: ?Sized> core::ops::Deref for RefCounter<T> {
     }
 }
 
+impl<T: ?Sized> AsRef<T> for RefCounter<T> {
+    fn as_ref(&self) -> &T {
+        &self.ptr
+    }
+}
+
 impl<T> RefCounter<T> {
     #[inline]
     pub fn new(val: T) -> Self {
@@ -89,4 +95,22 @@ impl<T> RefCounter<T> {
             alloc::rc::Rc::strong_count(&ptr.ptr)
         }
     }
+}
+
+fn binary_search<F: FnMut(isize) -> bool>(target: isize, mut op: F) -> isize {
+    // Define f(-1) == false and f(n) == true.
+    // Invariant: f(i-1) == false, f(j) == true.
+    let (mut i, mut j) = (0, target);
+    while i < j {
+        let h = (((i + j) as usize) >> 1) as isize; // avoid overflow when computing h
+                                                    // i ≤ h < j
+        if !op(h) {
+            i = h + 1; // preserves f(i-1) == false
+        } else {
+            j = h; // preserves f(j) == true
+        }
+    }
+
+    // i == j, f(i-1) == false, and f(j) (= f(i)) == true  =>  answer is i.
+    i
 }

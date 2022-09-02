@@ -1,4 +1,5 @@
-use vpb::TableIndex;
+use vpb::{TableIndex, kvstructs::bytes::Bytes};
+use super::{RefCounter, table::Block, error::*};
 
 #[cfg(not(feature = "std"))]
 mod no_std;

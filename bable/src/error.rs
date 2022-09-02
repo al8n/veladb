@@ -3,15 +3,33 @@ pub type Result<T> = core::result::Result<T, Error>;
 #[derive(Debug)]
 pub enum Error {
     ChecksumMismatch,
+    EmptyBlock,
+    BlockChecksumMismatch {
+        table: String,
+        block: usize,
+    },
+    BlockOffsetChecksumMismatch {
+        table: String,
+        block: usize,
+        offset: usize,
+    },
+    InvalidChecksumLength,
     AllocateOverflow(zallocator::Overflow),
     EncryptError(vpb::encrypt::EncryptError),
     DecodeError(vpb::prost::DecodeError),
+    BlockOutOfRange {
+        num_offsets: u64,
+        index: u64,
+    },
+    Compression(vpb::compression::Error),
     #[cfg(feature = "std")]
     IO(std::io::Error),
     #[cfg(feature = "std")]
     MmapError(fmmap::error::Error),
     #[cfg(feature = "std")]
     CacheError(stretto::CacheError),
+    #[cfg(feature = "std")]
+    InvalidFile(String)
 }
 
 #[cfg(feature = "std")]
@@ -40,6 +58,12 @@ impl From<vpb::encrypt::EncryptError> for Error {
     }
 }
 
+impl From<vpb::compression::Error> for Error {
+    fn from(e: vpb::compression::Error) -> Self {
+        Error::Compression(e)
+    }
+}
+
 impl From<vpb::prost::DecodeError> for Error {
     fn from(e: vpb::prost::DecodeError) -> Self {
         Error::DecodeError(e)
@@ -65,6 +89,14 @@ impl core::fmt::Display for Error {
             Error::DecodeError(e) => write!(f, "decode error: {}", e),
             #[cfg(feature = "std")]
             Error::CacheError(e) => write!(f, "cache error: {}", e),
+            Error::BlockOutOfRange { num_offsets, index } => write!(f, "block out of range: {} not in range (0..{})", index, num_offsets),
+            Error::InvalidChecksumLength => write!(f, "invalid checksum length: either the data is corrupted or the table options are incorrectly set"),
+            Error::BlockChecksumMismatch { table, block } => write!(f, "block checksum mismatch: block {} in table {}", block, table),
+            Error::BlockOffsetChecksumMismatch { table, block, offset } => write!(f, "block offset checksum mismatch: block {} in table {} at offset {}", block, table, offset),
+            Error::Compression(e) => write!(f, "compression/decompression error: {}", e),
+            Error::EmptyBlock => write!(f, "block size cannot be zero"),
+            #[cfg(feature = "std")]
+            Error::InvalidFile(name) => write!(f, "invalid file name: {name}"),
         }
     }
 }

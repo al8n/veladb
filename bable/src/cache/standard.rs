@@ -1,7 +1,5 @@
-use stretto::{Cache, CacheCallback, Coster, DefaultKeyBuilder, KeyBuilder, UpdateValidator};
-use vpb::{kvstructs::bytes::Bytes, TableIndex};
-
-use crate::{error::*, table::Block, RefCounter};
+use stretto::{Cache, CacheCallback, Coster, KeyBuilder, UpdateValidator, TransparentKeyBuilder};
+use super::*;
 
 #[doc(hidden)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -32,24 +30,11 @@ impl CacheCallback for NoopIndex {
     fn on_exit(&self, _val: Option<Self::Value>) {}
 }
 
-#[doc(hidden)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct IndexKeyBuilder;
-
-impl KeyBuilder for IndexKeyBuilder {
-    type Key = u64;
-
-    #[inline(always)]
-    fn hash_index(&self, key: &Self::Key) -> u64 {
-        *key
-    }
-}
-
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct IndexCache(
     RefCounter<
-        Cache<u64, RefCounter<TableIndex>, IndexKeyBuilder, NoopIndex, NoopIndex, NoopIndex>,
+        Cache<u64, RefCounter<TableIndex>, TransparentKeyBuilder<u64>, NoopIndex, NoopIndex, NoopIndex>,
     >,
 );
 
@@ -59,7 +44,7 @@ impl IndexCache {
             .set_callback(NoopIndex)
             .set_coster(NoopIndex)
             .set_update_validator(NoopIndex)
-            .set_key_builder(IndexKeyBuilder)
+            .set_key_builder(TransparentKeyBuilder::default())
             .finalize()
             .map(|c| Self(RefCounter::new(c)))
             .map_err(From::from)
@@ -68,7 +53,7 @@ impl IndexCache {
 
 impl core::ops::Deref for IndexCache {
     type Target =
-        Cache<u64, RefCounter<TableIndex>, IndexKeyBuilder, NoopIndex, NoopIndex, NoopIndex>;
+        Cache<u64, RefCounter<TableIndex>, TransparentKeyBuilder<u64>, NoopIndex, NoopIndex, NoopIndex>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -132,8 +117,12 @@ impl KeyBuilder for BlockKeyBuilder {
     type Key = Bytes;
 
     #[inline]
-    fn hash_index(&self, key: &Self::Key) -> u64 {
-        use core::hash::{BuildHasher, Hash, Hasher};
+    fn hash_index<Q>(&self, key: &Q) -> u64 
+    where
+        Self::Key: core::borrow::Borrow<Q>,
+        Q: core::hash::Hash + Eq + ?Sized,
+    {
+        use core::hash::{BuildHasher, Hasher};
 
         let mut s = self.sea.build_hasher();
         key.hash(&mut s);
@@ -141,8 +130,12 @@ impl KeyBuilder for BlockKeyBuilder {
     }
 
     #[inline]
-    fn hash_conflict(&self, key: &Self::Key) -> u64 {
-        use core::hash::{BuildHasher, Hash, Hasher};
+    fn hash_conflict<Q>(&self, key: &Q) -> u64 
+        where
+            Self::Key: core::borrow::Borrow<Q>,
+            Q: core::hash::Hash + Eq + ?Sized,
+    {
+        use core::hash::{BuildHasher, Hasher};
         let mut x = self.xx.build_hasher();
         key.hash(&mut x);
         x.finish()

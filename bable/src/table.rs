@@ -1,11 +1,19 @@
-use crate::{options::TableOptions, RefCounter};
+use crate::{builder::Builder, RefCounter, sync::{AtomicU64, Ordering}};
+
+use self::iterator::UniTableIterator;
 
 use super::error::*;
 use vpb::{
     checksum::calculate_checksum,
     kvstructs::{bytes::Bytes, Key},
-    ChecksumAlgorithm, Marshaller,
+    ChecksumAlgorithm, Marshaller, Compression,
 };
+
+mod iterator;
+pub use iterator::*;
+
+#[cfg(test)]
+mod test;
 
 #[cfg(not(feature = "std"))]
 mod no_std;
@@ -17,8 +25,10 @@ mod standard;
 #[cfg(feature = "std")]
 use standard::*;
 
-const FILE_SUFFIX: &str = ".sst";
+const FILE_SUFFIX: &str = "sst";
 const INT_SIZE: usize = core::mem::size_of::<usize>();
+static NUM_BLOCKS: AtomicU64 = AtomicU64::new(0);
+
 
 pub struct Block {
     offset: usize,
@@ -74,6 +84,90 @@ struct CheapIndex {
     num_entries: usize,
 }
 
+#[repr(transparent)]
 pub struct Table {
-    inner: RefCounter<Inner>,
+    inner: RefCounter<RawTable>,
+}
+
+impl Table {
+    #[inline]
+    pub fn biggest(&self) -> &Key {
+        self.inner.biggest()
+    }
+
+   
+    #[inline]
+    pub fn smallest(&self) -> &Key {
+        self.inner.smallest()
+    }
+
+    #[inline]
+    pub fn id(&self) -> u64 { self.inner.id() }
+
+    #[inline]
+    pub fn path(&self) -> &std::path::Path {
+        self.inner.path()
+    }
+
+    #[inline]
+    pub fn max_version(&self) -> u64 {
+        self.inner.max_version()
+    }
+
+    #[inline]
+    pub fn bloom_filter_size(&self) -> usize {
+        self.inner.bloom_filter_size()
+    }
+
+    #[inline]
+    pub fn uncompressed_size(&self) -> u32 {
+        self.inner.uncompressed_size()
+    }
+
+    #[inline]
+    pub fn key_count(&self) -> u32 {
+        self.inner.key_count()
+    }
+
+    #[inline]
+    pub fn on_disk_size(&self) -> u32 {
+        self.inner.on_disk_size()
+    }
+
+    #[inline]
+    pub fn secret(&self) -> &[u8] {
+        self.inner.secret()
+    }
+
+    #[inline]
+    pub fn compression(&self) -> Compression {
+        self.inner.compression()
+    }
+
+    #[inline]
+    pub fn iter(&self, opt: usize) -> UniTableIterator<RefCounter<RawTable>> {
+        UniTableIterator::new(self.inner.clone(), opt)
+    }
+}
+
+impl From<RawTable> for Table {
+    fn from(inner: RawTable) -> Self {
+        Self {
+            inner: RefCounter::new(inner),
+        }
+    }
+}
+
+impl core::ops::Deref for Table {
+    type Target = RefCounter<RawTable>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl AsRef<RawTable> for Table {
+    fn as_ref(&self) -> &RawTable {
+        &self.inner
+    }
 }

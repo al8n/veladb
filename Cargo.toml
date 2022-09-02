@@ -1,7 +1,10 @@
 [workspace]
 members = [
   "bable",
-  "vpb",
   "core",
-  "wisc"
+  "mapcell",
+  "kvstructs",
+  "vpb",
+  "wisc",
+  "zallocator"
 ]
