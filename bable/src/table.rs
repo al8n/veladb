@@ -146,6 +146,36 @@ impl Table {
     }
 
     #[inline]
+    pub fn checksum(&self) -> &[u8] {
+        self.inner.checksum()
+    }
+
+    #[inline]
+    pub fn checksum_bytes(&self) -> &Bytes {
+        self.inner.checksum_bytes()
+    }
+
+    #[inline]
+    pub fn in_memory(&self) -> bool {
+        self.inner.in_memory()
+    }
+
+    #[inline]
+    pub fn key_splits(&self, id: usize, prefix: &[u8]) -> Vec<Key> {
+        self.inner.key_splits(id, prefix)
+    }
+
+    #[inline]
+    pub fn contains_hash(&self, hash: u32) -> bool {
+        self.inner.contains_hash(hash)
+    }
+
+    #[inline]
+    pub fn covered_by_prefix(&self, prefix: &[u8]) -> bool {
+        self.inner.covered_by_prefix(prefix)
+    }
+
+    #[inline]
     pub fn iter(&self, opt: usize) -> UniTableIterator<RefCounter<RawTable>> {
         UniTableIterator::new(self.inner.clone(), opt)
     }

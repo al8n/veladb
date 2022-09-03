@@ -64,8 +64,8 @@ fn build_table(mut key_values: Vec<KV>, opts: TableOptions) -> Result<Table> {
     key_values.into_iter().for_each(|kv| {
         assert_eq!(kv.data.len(), 2);
         b.insert(
-            Key::from(kv.data[0].clone()).with_timestamp(0),
-            Value::with_all_fields('A' as u8, 0, 0, 0, Bytes::from(kv.data[1].clone())),
+            &Key::from(kv.data[0].clone()).with_timestamp(0),
+            &Value::with_all_fields(b'A', 0, 0, 0, Bytes::from(kv.data[1].clone())),
             0,
         );
     });
@@ -91,7 +91,7 @@ fn test_table_big_value() {
     for i in 0..n {
         let k = Key::from(key("", i as isize)).with_timestamp((i + 1) as u64);
         let v = Value::from(val(i));
-        builder.insert(k, v, 0)
+        builder.insert(&k, &v, 0)
     }
 
     let mut filename = std::env::temp_dir();
@@ -164,8 +164,8 @@ fn test_max_version() {
     let n = 1000;
     for i in 0..n {
         b.insert(
-            Key::from(format!("foo:{}", i)).with_timestamp(i + 1),
-            Value::default(),
+            &Key::from(format!("foo:{}", i)).with_timestamp(i + 1),
+            &Value::default(),
             0,
         );
     }
@@ -205,7 +205,7 @@ fn test_seek_to_first() {
         assert!(iter.valid());
         let v = iter.val().unwrap();
         assert_eq!(v.parse_value(), "0".to_string().as_bytes());
-        assert_eq!(v.get_meta(), 'A' as u8);
+        assert_eq!(v.get_meta(), b'A');
     }
 
     for n in [99, 100, 101, 199, 200, 250, 9999, 10000] {
@@ -223,12 +223,12 @@ fn test_seek_to_last() {
         assert!(iter.valid());
         let v = iter.val().unwrap();
         assert_eq!(v.parse_value(), format!("{}", n - 1).as_bytes());
-        assert_eq!(v.get_meta(), 'A' as u8);
+        assert_eq!(v.get_meta(), b'A');
         iter.prev();
         assert!(iter.valid());
         let v = iter.val().unwrap();
         assert_eq!(v.parse_value(), format!("{}", n - 2).as_bytes());
-        assert_eq!(v.get_meta(), 'A' as u8);
+        assert_eq!(v.get_meta(), b'A');
     }
 
     for n in [99, 100, 101, 199, 200, 250, 9999, 10000] {
@@ -250,39 +250,39 @@ fn test_seek_in() {
 
     let data = vec![
         TestData {
-            input: "abc".to_string().as_bytes().to_vec(),
+            input: b"abc".to_vec(),
             valid: true,
-            output: "k0000".to_string().as_bytes().to_vec(),
+            output: b"k0000".to_vec(),
         },
         TestData {
-            input: "k0100".to_string().as_bytes().to_vec(),
+            input: b"k0100".to_vec(),
             valid: true,
-            output: "k0100".to_string().as_bytes().to_vec(),
+            output: b"k0100".to_vec(),
         },
         TestData {
-            input: "k0100b".to_string().as_bytes().to_vec(),
+            input: b"k0100b".to_vec(),
             valid: true,
-            output: "k0101".to_string().as_bytes().to_vec(),
+            output: b"k0101".to_vec(),
         }, // Test case where we jump to next block.
         TestData {
-            input: "k1234".to_string().as_bytes().to_vec(),
+            input: b"k1234".to_vec(),
             valid: true,
-            output: "k1234".to_string().as_bytes().to_vec(),
+            output: b"k1234".to_vec(),
         },
         TestData {
-            input: "k1234b".to_string().as_bytes().to_vec(),
+            input: b"k1234b".to_vec(),
             valid: true,
-            output: "k1235".to_string().as_bytes().to_vec(),
+            output: b"k1235".to_vec(),
         },
         TestData {
-            input: "k9999".to_string().as_bytes().to_vec(),
+            input: b"k9999".to_vec(),
             valid: true,
-            output: "k9999".to_string().as_bytes().to_vec(),
+            output: b"k9999".to_vec(),
         },
         TestData {
-            input: "z".to_string().as_bytes().to_vec(),
+            input: b"z".to_vec(),
             valid: false,
-            output: "".to_string().as_bytes().to_vec(),
+            output: b"".to_vec(),
         },
     ];
 
@@ -306,39 +306,39 @@ fn test_seek_for_prev() {
     let mut iter = table.iter(0);
     let data = vec![
         TestData {
-            input: "abc".to_string().as_bytes().to_vec(),
+            input: b"abc".to_vec(),
             valid: false,
-            output: "".to_string().as_bytes().to_vec(),
+            output: b"".to_vec(),
         },
         TestData {
-            input: "k0100".to_string().as_bytes().to_vec(),
+            input: b"k0100".to_vec(),
             valid: true,
-            output: "k0100".to_string().as_bytes().to_vec(),
+            output: b"k0100".to_vec(),
         },
         TestData {
-            input: "k0100b".to_string().as_bytes().to_vec(),
+            input: b"k0100b".to_vec(),
             valid: true,
-            output: "k0100".to_string().as_bytes().to_vec(),
+            output: b"k0100".to_vec(),
         }, // Test case where we jump to next block.
         TestData {
-            input: "k1234".to_string().as_bytes().to_vec(),
+            input: b"k1234".to_vec(),
             valid: true,
-            output: "k1234".to_string().as_bytes().to_vec(),
+            output: b"k1234".to_vec(),
         },
         TestData {
-            input: "k1234b".to_string().as_bytes().to_vec(),
+            input: b"k1234b".to_vec(),
             valid: true,
-            output: "k1234".to_string().as_bytes().to_vec(),
+            output: b"k1234".to_vec(),
         },
         TestData {
-            input: "k9999".to_string().as_bytes().to_vec(),
+            input: b"k9999".to_vec(),
             valid: true,
-            output: "k9999".to_string().as_bytes().to_vec(),
+            output: b"k9999".to_vec(),
         },
         TestData {
-            input: "z".to_string().as_bytes().to_vec(),
+            input: b"z".to_vec(),
             valid: true,
-            output: "k9999".to_string().as_bytes().to_vec(),
+            output: b"k9999".to_vec(),
         },
     ];
 
@@ -378,7 +378,7 @@ fn test_iterate_from_start() {
                 cnt,
                 String::from_utf8(iter.key().unwrap().parse_key().to_vec()).unwrap()
             );
-            assert_eq!('A' as u8, v.get_meta());
+            assert_eq!(b'A', v.get_meta());
             cnt += 1;
             iter.next();
         }
@@ -404,7 +404,7 @@ fn test_iterate_from_end() {
             assert!(iter.valid());
             let v = iter.val().unwrap();
             assert_eq!(format!("{}", i).as_bytes(), v.parse_value());
-            assert_eq!('A' as u8, v.get_meta());
+            assert_eq!(b'A', v.get_meta());
         });
         iter.prev();
         assert!(!iter.valid());
@@ -494,7 +494,7 @@ fn test_concat_iterator_one_table() {
     assert_eq!("k0000".as_bytes(), k.parse_key());
     let v = t.val().unwrap();
     assert_eq!("0".as_bytes(), v.parse_value());
-    assert_eq!('A' as u8, v.get_meta());
+    assert_eq!(b'A', v.get_meta());
 }
 
 #[test]
@@ -510,7 +510,7 @@ fn test_uni_iterator() {
             format!("{}", cnt).as_bytes(),
             iter.val().unwrap().parse_value()
         );
-        assert_eq!('A' as u8, iter.val().unwrap().get_meta());
+        assert_eq!(b'A', iter.val().unwrap().get_meta());
         cnt += 1;
         iter.next();
     }
@@ -530,7 +530,7 @@ fn test_uni_iterator_reverse() {
             format!("{}", n - 1 - cnt).as_bytes(),
             iter.val().unwrap().parse_value()
         );
-        assert_eq!('A' as u8, iter.val().unwrap().get_meta());
+        assert_eq!(b'A', iter.val().unwrap().get_meta());
         cnt += 1;
         iter.next();
     }
@@ -554,41 +554,29 @@ fn test_concat_iterator() {
                 format!("{}", cnt % n).as_bytes(),
                 it.val().unwrap().parse_value()
             );
-            assert_eq!('A' as u8, it.val().unwrap().get_meta());
+            assert_eq!(b'A', it.val().unwrap().get_meta());
             cnt += 1;
             it.next();
         }
 
         assert_eq!(cnt, n * 3);
-        it.seek(
-            Key::from("a".as_bytes().to_vec())
-                .with_timestamp(0)
-                .as_slice(),
-        );
-        assert_eq!("keya0000".as_bytes(), it.key().unwrap().parse_key());
+        it.seek(Key::from(b"a".to_vec()).with_timestamp(0).as_slice());
+        assert_eq!(b"keya0000", it.key().unwrap().parse_key());
         assert_eq!("0".as_bytes(), it.val().unwrap().parse_value());
 
-        it.seek(
-            Key::from("keyb".as_bytes().to_vec())
-                .with_timestamp(0)
-                .as_slice(),
-        );
-        assert_eq!("keyb0000".as_bytes(), it.key().unwrap().parse_key());
-        assert_eq!("0".as_bytes(), it.val().unwrap().parse_value());
+        it.seek(Key::from(b"keyb".to_vec()).with_timestamp(0).as_slice());
+        assert_eq!(b"keyb0000", it.key().unwrap().parse_key());
+        assert_eq!(b"0", it.val().unwrap().parse_value());
 
         it.seek(
-            Key::from("keyb9999b".as_bytes().to_vec())
+            Key::from(b"keyb9999b".to_vec())
                 .with_timestamp(0)
                 .as_slice(),
         );
-        assert_eq!("keyc0000".as_bytes(), it.key().unwrap().parse_key());
-        assert_eq!("0".as_bytes(), it.val().unwrap().parse_value());
+        assert_eq!(b"keyc0000", it.key().unwrap().parse_key());
+        assert_eq!(b"0", it.val().unwrap().parse_value());
 
-        it.seek(
-            Key::from("keyd".as_bytes().to_vec())
-                .with_timestamp(0)
-                .as_slice(),
-        );
+        it.seek(Key::from(b"keyd".to_vec()).with_timestamp(0).as_slice());
         assert!(!it.valid());
     }
 }
@@ -611,7 +599,7 @@ fn test_concat_iterator_reversed() {
                 format!("{}", n - (cnt % n) - 1).as_bytes(),
                 it.val().unwrap().parse_value()
             );
-            assert_eq!('A' as u8, it.val().unwrap().get_meta());
+            assert_eq!(b'A', it.val().unwrap().get_meta());
             cnt += 1;
             it.next();
         }
@@ -717,7 +705,7 @@ fn test_merging_iterator() {
         let v = it.val().unwrap();
         assert_eq!(expected[cnt].0.as_bytes(), k.parse_key());
         assert_eq!(expected[cnt].1.as_bytes(), v.parse_value());
-        assert_eq!('A' as u8, v.get_meta());
+        assert_eq!(b'A', v.get_meta());
         cnt += 1;
         it.next();
     }
@@ -800,7 +788,7 @@ fn test_merging_iterator_reversed() {
         let v = it.val().unwrap();
         assert_eq!(expected[cnt].0.as_bytes(), k.parse_key());
         assert_eq!(expected[cnt].1.as_bytes(), v.parse_value());
-        assert_eq!('A' as u8, v.get_meta());
+        assert_eq!(b'A', v.get_meta());
         cnt += 1;
         it.next();
     }
@@ -815,11 +803,11 @@ fn test_merging_iterator_take_one() {
         vec![
             KV {
                 index: 0,
-                data: vec!["k1".as_bytes().to_vec(), "a1".as_bytes().to_vec()],
+                data: vec![b"k1".to_vec(), b"a1".to_vec()],
             },
             KV {
                 index: 1,
-                data: vec!["k2".as_bytes().to_vec(), "a2".as_bytes().to_vec()],
+                data: vec![b"k2".to_vec(), b"a2".to_vec()],
             },
         ],
         opts.clone(),
@@ -829,7 +817,7 @@ fn test_merging_iterator_take_one() {
     let tbl2: Table = build_table(
         vec![KV {
             index: 0,
-            data: vec!["l1".as_bytes().to_vec(), "b1".as_bytes().to_vec()],
+            data: vec![b"l1".to_vec(), b"b1".to_vec()],
         }],
         opts,
     )
@@ -850,25 +838,25 @@ fn test_merging_iterator_take_one() {
     assert!(it.valid());
     let k = it.key().unwrap();
     let v = it.val().unwrap();
-    assert_eq!("k1".to_string().as_bytes(), k.as_bytes());
+    assert_eq!(b"k1", k.parse_key());
     assert_eq!("a1".to_string(), v.to_string());
-    assert_eq!('A' as u8, v.get_meta());
+    assert_eq!(b'A', v.get_meta());
     it.next();
 
     assert!(it.valid());
     let k = it.key().unwrap();
     let v = it.val().unwrap();
-    assert_eq!("k2".to_string().as_bytes(), k.as_bytes());
+    assert_eq!(b"k2", k.parse_key());
     assert_eq!("a2".to_string(), v.to_string());
-    assert_eq!('A' as u8, v.get_meta());
+    assert_eq!(b'A', v.get_meta());
     it.next();
 
     assert!(it.valid());
     let k = it.key().unwrap();
     let v = it.val().unwrap();
-    assert_eq!("l1".to_string().as_bytes(), k.as_bytes());
+    assert_eq!(b"l1", k.parse_key());
     assert_eq!("b1".to_string(), v.to_string());
-    assert_eq!('A' as u8, v.get_meta());
+    assert_eq!(b'A', v.get_meta());
     it.next();
 
     assert!(!it.valid());
@@ -880,7 +868,7 @@ fn test_merging_iterator_take_two() {
     let tbl1: Table = build_table(
         vec![KV {
             index: 0,
-            data: vec!["l1".as_bytes().to_vec(), "b1".as_bytes().to_vec()],
+            data: vec![b"l1".to_vec(), b"b1".to_vec()],
         }],
         opts.clone(),
     )
@@ -890,11 +878,11 @@ fn test_merging_iterator_take_two() {
         vec![
             KV {
                 index: 0,
-                data: vec!["k1".as_bytes().to_vec(), "a1".as_bytes().to_vec()],
+                data: vec![b"k1".to_vec(), b"a1".to_vec()],
             },
             KV {
                 index: 1,
-                data: vec!["k2".as_bytes().to_vec(), "a2".as_bytes().to_vec()],
+                data: vec![b"k2".to_vec(), b"a2".to_vec()],
             },
         ],
         opts,
@@ -917,25 +905,25 @@ fn test_merging_iterator_take_two() {
 
     let k = it.key().unwrap();
     let v = it.val().unwrap();
-    assert_eq!(b"k1", k.as_bytes());
+    assert_eq!(b"k1", k.parse_key());
     assert_eq!("a1".to_string(), v.to_string());
-    assert_eq!('A' as u8, v.get_meta());
+    assert_eq!(b'A', v.get_meta());
     it.next();
 
     assert!(it.valid());
     let k = it.key().unwrap();
     let v = it.val().unwrap();
-    assert_eq!(b"k2", k.as_bytes());
+    assert_eq!(b"k2", k.parse_key());
     assert_eq!("a2".to_string(), v.to_string());
-    assert_eq!('A' as u8, v.get_meta());
+    assert_eq!(b'A', v.get_meta());
     it.next();
 
     assert!(it.valid());
     let k = it.key().unwrap();
     let v = it.val().unwrap();
-    assert_eq!(b"l1", k.as_bytes());
+    assert_eq!(b"l1", k.parse_key());
     assert_eq!("b1".to_string(), v.to_string());
-    assert_eq!('A' as u8, v.get_meta());
+    assert_eq!(b'A', v.get_meta());
     it.next();
 
     assert!(!it.valid());

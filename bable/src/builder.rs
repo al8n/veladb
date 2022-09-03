@@ -22,8 +22,6 @@ mod standard;
 #[cfg(not(feature = "std"))]
 mod no_std;
 
-const KB: usize = 1024;
-const MB: usize = KB * 1024;
 pub const MAX_ALLOCATOR_INITIAL_SIZE: usize = 256 << 20;
 
 /// When a block is encrypted, it's length increases. We add 256 bytes of padding to
@@ -240,7 +238,7 @@ impl Builder {
     /// The same as `insert` function but it also increments the internal
     /// `stale_data_size` counter. This value will be used to prioritize this table for
     /// compaction.
-    pub fn insert_stale(&mut self, key: Key, val: Value, value_len: u32) {
+    pub fn insert_stale(&mut self, key: &Key, val: &Value, value_len: u32) {
         // Rough estimate based on how much space it will occupy in the SST.
         self.stale_data_size += key.len()
             + val.len()
@@ -251,12 +249,12 @@ impl Builder {
     }
 
     /// Inserts a key-value pair to the block.
-    pub fn insert(&mut self, key: Key, val: Value, value_len: u32) {
+    pub fn insert(&mut self, key: &Key, val: &Value, value_len: u32) {
         self.insert_in(key, val, value_len, false)
     }
 
     #[inline]
-    fn insert_in(&mut self, key: Key, val: Value, value_len: u32, is_stale: bool) {
+    fn insert_in(&mut self, key: &Key, val: &Value, value_len: u32, is_stale: bool) {
         if self.should_finish_block(key.len(), val.encoded_size()) {
             if is_stale {
                 // This key will be added to tableIndex and it is stale.
@@ -308,7 +306,7 @@ impl Builder {
         (estimated_size as u64) > self.opts.table_capacity()
     }
 
-    pub(crate) fn build(mut self) -> Result<Option<BuildData>> {
+    pub fn build(mut self) -> Result<Option<BuildData>> {
         self.finish_block(false);
         #[cfg(feature = "std")]
         {
@@ -355,7 +353,6 @@ impl Builder {
         tbi.stale_data_size = self.stale_data_size as u32;
 
         let data = tbi.marshal();
-        let on_disk_size = data.len() + self.on_disk_size as usize;
         let encryption = self.opts.encryption();
 
         if encryption.is_some() {
@@ -364,7 +361,6 @@ impl Builder {
                 &random_iv(),
                 encryption.algorithm(),
             )?;
-            let index_size = on_disk_size as u32;
             // Build checksum for the index.
             let cks = index
                 .as_slice()
@@ -378,7 +374,6 @@ impl Builder {
                 opts: self.opts,
                 block_list: self.block_list,
                 index,
-                index_size,
                 checksum: cks,
                 checksum_size: cks_size as u32,
                 size,
@@ -396,7 +391,6 @@ impl Builder {
                 opts: self.opts,
                 block_list: self.block_list,
                 index: data,
-                index_size: on_disk_size as u32,
                 checksum: cks,
                 checksum_size: cks_size as u32,
                 size,
@@ -423,12 +417,7 @@ impl Builder {
 
         let cur_block_end = self.cur_block.end();
 
-        let buffer = self.allocate(entries_len * 4);
-        let buf_data = buffer.as_mut_slice();
-        // Append the entryOffsets and its length.
-        for i in 0..entries_len {
-            buf_data[i * 4..(i * 4) + 4].copy_from_slice(&entries[i].to_be_bytes());
-        }
+        self.append(u32_slice_to_bytes(entries));
         self.append(&(entries_len as u32).to_be_bytes());
 
         // Append the block checksum and its length.
@@ -537,7 +526,7 @@ impl Builder {
         &new_key[idx..]
     }
 
-    fn insert_helper(&mut self, key: Key, val: Value, vplen: u32) {
+    fn insert_helper(&mut self, key: &Key, val: &Value, vplen: u32) {
         self.key_hashes.push(hash(key.parse_key()));
 
         let version = key.parse_timestamp();
@@ -549,9 +538,9 @@ impl Builder {
         // diffKey stores the difference of key with base key.
         let diff_key = if base_key.is_empty() {
             self.cur_block.set_base_key(key.clone());
-            &key
+            key
         } else {
-            self.key_diff(&key)
+            self.key_diff(key)
         };
 
         let key_len = key.len();
@@ -686,12 +675,11 @@ impl Builder {
     }
 }
 
-pub(crate) struct BuildData {
+pub struct BuildData {
     alloc: Allocator,
     opts: RefCounter<TableOptions>,
     block_list: Vec<BBlock>,
     index: Vec<u8>,
-    index_size: u32,
     checksum: Vec<u8>,
     checksum_size: u32,
     size: u32,
@@ -699,7 +687,21 @@ pub(crate) struct BuildData {
 
 impl BuildData {
     #[inline]
-    pub(crate) fn size(&self) -> u32 {
+    pub fn size(&self) -> u32 {
         self.size
     }
+}
+
+#[inline(always)]
+fn u32_slice_to_bytes(bytes: &[u32]) -> &[u8] {
+    const DUMMY: &[u8] = &[];
+    if bytes.is_empty() {
+        return DUMMY;
+    }
+
+    let len = bytes.len();
+    let ptr = bytes.as_ptr();
+    // Safety:
+    // - This function is not exposed to the public.
+    unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), len * 4) }
 }

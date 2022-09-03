@@ -6,7 +6,7 @@ use vpb::{
     compression::Compressor,
     encrypt::Encryptor,
     kvstructs::{
-        bytes::{Buf, BufMut, Bytes, BytesMut},
+        bytes::{BufMut, Bytes, BytesMut},
         Key, KeyExt,
     },
     BlockOffset, Checksum, Compression, Marshaller, TableIndex,
@@ -17,7 +17,6 @@ use crate::{
     bloom::MayContain,
     error::*,
     options::{ChecksumVerificationMode, TableOptions},
-    sync::AtomicU32,
     Block, RefCounter,
 };
 
@@ -32,7 +31,7 @@ impl super::Table {
             mmap.set_remove_on_drop(true);
 
             // TODO: check written bytes
-            let written = bd.write(&mut mmap)?;
+            let _written = bd.write(&mut mmap)?;
             mmap.flush()
                 .map_err(|e| {
                     #[cfg(feature = "tracing")]
@@ -98,7 +97,6 @@ impl super::Table {
             has_bloom_filter: false,
             in_memory: true,
             opts,
-            refs: AtomicU32::new(0),
         };
         this.init_biggest_and_smallest();
         Ok(this.into())
@@ -115,7 +113,7 @@ impl super::Table {
             return Err(Error::EmptyBlock);
         }
 
-        let (id, ok) = parse_file_id(MmapFileExt::path(&mf));
+        let (id, ok) = Self::parse_file_id(MmapFileExt::path(&mf));
         if !ok {
             return Err(Error::InvalidFile(format!("{:?}", MmapFileExt::path(&mf))));
         }
@@ -143,7 +141,6 @@ impl super::Table {
             index_len: 0,
             has_bloom_filter: false,
             opts,
-            refs: AtomicU32::new(0),
             in_memory: false,
         };
         this.init_biggest_and_smallest();
@@ -162,6 +159,53 @@ impl super::Table {
         }
         Ok(this.into())
     }
+
+    /// Returns the creation time for the table.
+    #[inline]
+    pub fn created_at(&self) -> std::time::SystemTime {
+        self.created_at
+    }
+
+    /// Does the inverse of ParseFileID
+    #[inline]
+    pub fn id_to_filename(id: u64) -> PathBuf {
+        let mut pb = PathBuf::from(format!("{:06}", id));
+        pb.set_extension(FILE_SUFFIX);
+        pb
+    }
+
+    /// parse_file_id reads the file id out of a filename.
+    #[inline]
+    pub fn parse_file_id<P: AsRef<Path>>(path: P) -> (u64, bool) {
+        if let Some(ext) = path.as_ref().extension() {
+            if !ext.eq(FILE_SUFFIX) {
+                return (0, false);
+            }
+
+            if let Some(name) = path.as_ref().file_stem() {
+                name.to_str()
+                    .map(|sid| {
+                        sid.parse::<u64>()
+                            .map(|id| (id, true))
+                            .unwrap_or((0, false))
+                    })
+                    .unwrap_or((0, false))
+            } else {
+                (0, false)
+            }
+        } else {
+            (0, false)
+        }
+    }
+
+    /// Should be named TableFilepath -- it combines the dir with the ID to make a table
+    /// filepath.
+    #[inline]
+    pub fn new_filename(id: u64, mut dir: PathBuf) -> PathBuf {
+        dir.push(format!("{:06}", id));
+        dir.set_extension(FILE_SUFFIX);
+        dir
+    }
 }
 
 pub struct RawTable {
@@ -172,9 +216,6 @@ pub struct RawTable {
     // Use fetch_index to access.
     index: RefCounter<TableIndex>,
     cheap: CheapIndex,
-
-    // For file garbage collection.
-    refs: AtomicU32,
 
     // The following are initialized once and const.
     /// Smallest keys (with timestamps).
@@ -191,7 +232,6 @@ pub struct RawTable {
     index_start: usize,
     index_len: usize,
     has_bloom_filter: bool,
-
     in_memory: bool,
     opts: RefCounter<TableOptions>,
 }
@@ -263,6 +303,21 @@ impl RawTable {
         self.opts.compression()
     }
 
+    #[inline]
+    pub(super) fn checksum(&self) -> &[u8] {
+        &self.checksum
+    }
+
+    #[inline]
+    pub(super) fn checksum_bytes(&self) -> &Bytes {
+        &self.checksum
+    }
+
+    #[inline]
+    pub(super) const fn in_memory(&self) -> bool {
+        self.in_memory
+    }
+
     /// Splits the table into at least n ranges based on the block offsets.
     pub(super) fn key_splits(&self, idx: usize, prefix: &[u8]) -> Vec<Key> {
         let mut res = Vec::new();
@@ -271,9 +326,7 @@ impl RawTable {
         }
 
         let offsets_len = self.offsets_length();
-        let jump = (offsets_len / idx).max(1);
         let mut idx = 0;
-
         while idx < offsets_len {
             if idx >= offsets_len {
                 idx = offsets_len - 1;
@@ -290,11 +343,6 @@ impl RawTable {
     #[inline]
     pub(super) fn iter(&self, opt: usize) -> UniTableIterator<&RawTable> {
         UniTableIterator::new(self, opt)
-    }
-
-    #[inline]
-    fn cheap_index(&self) -> &CheapIndex {
-        &self.cheap
     }
 
     #[inline]
@@ -482,13 +530,10 @@ impl RawTable {
             u32::from_be_bytes((&data[read_pos..read_pos + 4]).try_into().unwrap()) as usize;
         let entries_index_start = read_pos - (num_entries * 4);
         let entries_index_end = entries_index_start + (num_entries * 4);
-        let raw_entries = &data[entries_index_start..entries_index_end];
-        let mut entry_offsets = Vec::with_capacity(num_entries);
-        for i in 0..num_entries {
-            entry_offsets.push(u32::from_be_bytes(
-                raw_entries[i * 4..(i + 1) * 4].try_into().unwrap(),
-            ));
-        }
+        let mut entry_offsets = vec![0; num_entries];
+        entry_offsets.copy_from_slice(bytes_to_u32_slice(
+            &data[entries_index_start..entries_index_end],
+        ));
 
         let blk = Block {
             offset,
@@ -680,43 +725,17 @@ impl RawTable {
     }
 }
 
-/// parse_file_id reads the file id out of a filename.
-#[inline]
-pub fn parse_file_id<P: AsRef<Path>>(path: P) -> (u64, bool) {
-    if let Some(ext) = path.as_ref().extension() {
-        if !ext.eq(FILE_SUFFIX) {
-            return (0, false);
-        }
-
-        if let Some(name) = path.as_ref().file_stem() {
-            name.to_str()
-                .map(|sid| {
-                    sid.parse::<u64>()
-                        .map(|id| (id, true))
-                        .unwrap_or((0, false))
-                })
-                .unwrap_or((0, false))
-        } else {
-            (0, false)
-        }
-    } else {
-        (0, false)
+#[inline(always)]
+fn bytes_to_u32_slice(bytes: &[u8]) -> &[u32] {
+    const DUMMY: &[u32] = &[];
+    if bytes.is_empty() {
+        return DUMMY;
     }
-}
 
-/// id_to_filename does the inverse of ParseFileID
-#[inline]
-pub fn id_to_filename(id: u64) -> PathBuf {
-    let mut pb = PathBuf::from(format!("{:06}", id));
-    pb.set_extension(FILE_SUFFIX);
-    pb
-}
-
-/// new_filename should be named TableFilepath -- it combines the dir with the ID to make a table
-/// filepath.
-#[inline]
-pub fn new_filename(id: u64, mut dir: PathBuf) -> PathBuf {
-    dir.push(format!("{:06}", id));
-    dir.set_extension(FILE_SUFFIX);
-    dir
+    let len = bytes.len();
+    let ptr = bytes.as_ptr();
+    // Safety:
+    // - This function is not exposed to the public.
+    // - bytes is a slice of u32, so it is safe to transmute it to &[u32].
+    unsafe { core::slice::from_raw_parts(ptr.cast::<u32>(), len / 4) }
 }

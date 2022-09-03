@@ -1113,6 +1113,7 @@ struct Node {
 }
 
 impl Node {
+    #[inline(always)]
     fn new(iter: Box<TableIterator>) -> Self {
         Self {
             valid: false,
@@ -1121,10 +1122,7 @@ impl Node {
         }
     }
 
-    fn set_iterator(&mut self, iter: TableIterator) {
-        self.iter = Box::new(iter);
-    }
-
+    #[inline(always)]
     fn set_key(&mut self) {
         self.valid = self.iter.valid();
         if self.valid {
@@ -1137,17 +1135,20 @@ impl Node {
         }
     }
 
+    #[inline(always)]
     fn next(&mut self) {
         self.iter.next();
         self.set_key();
     }
 
+    #[inline(always)]
     fn rewind(&mut self) {
         self.iter.rewind();
         self.set_key();
     }
 
-    fn seek<K: KeyExt>(&mut self, key: K) {
+    #[inline(always)]
+    fn seek(&mut self, key: impl KeyExt) {
         self.iter.seek(key);
         self.set_key();
     }

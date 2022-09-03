@@ -118,7 +118,7 @@ impl BlockProcessor {
 }
 
 impl super::BuildData {
-    pub(crate) fn write(self, dst: &mut MmapFileMut) -> Result<usize> {
+    pub fn write(self, dst: &mut MmapFileMut) -> Result<usize> {
         let mut written = 0;
         for blk in &self.block_list {
             written += dst.write(&blk.data().as_slice()[..blk.end()], written);

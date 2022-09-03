@@ -61,6 +61,47 @@ impl Compression {
         }
     }
 
+    /// Set the compression level, only used for zstd compression
+    #[inline]
+    pub const fn set_level(mut self, level: i32) -> Self {
+        self.level = level;
+        self
+    }
+
+    /// Set the compression algorithm
+    #[inline]
+    pub const fn set_algorithm(mut self, algo: CompressionAlgorithm) -> Self {
+        self.algo = algo;
+        self
+    }
+
+    #[cfg(any(feature = "lz4", feature = "lz4-std"))]
+    #[inline]
+    pub const fn lz4() -> Self {
+        Self {
+            algo: CompressionAlgorithm::Lz4,
+            level: 0,
+        }
+    }
+
+    #[cfg(feature = "zstd")]
+    #[inline]
+    pub const fn zstd(level: i32) -> Self {
+        Self {
+            algo: CompressionAlgorithm::Zstd,
+            level,
+        }
+    }
+
+    #[cfg(feature = "snappy")]
+    #[inline]
+    pub const fn snappy() -> Self {
+        Self {
+            algo: CompressionAlgorithm::Snappy,
+            level: 0,
+        }
+    }
+
     #[inline]
     pub const fn is_none(&self) -> bool {
         match self.algo {

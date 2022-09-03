@@ -26,8 +26,12 @@ aes-std = ["vpb/aes-std"]
 
 inline-more = ["hashbrown/inline-more"]
 
+[[bench]]
+name = "table"
+harness = false
 
 [dependencies]
+bytemuck = { version = "1.2", features = ["aarch64_simd", "wasm_simd"] }
 crossbeam-channel = { version = "0.5", optional = true }
 crossbeam-utils = { version = "0.8", optional = true }
 crossbeam-queue = { version = "0.3", default-features = false, features = ["alloc"] }
@@ -47,3 +51,11 @@ tracing = { version = "0.1", optional = true, default-features = false }
 triomphe = { version = "0.1.7", default-features = false }
 vpb = { path = "../vpb", default-features = false, features = ["sea", "xxhash64"] }
 zallocator = { path = "../zallocator", default-features = false }
+
+[target.'cfg(not(target_env = "msvc"))'.dev-dependencies]
+tikv-jemallocator = "0.5"
+
+
+[dev-dependencies]
+criterion = "0.3"
+vpb = { path = "../vpb", features = ["full"] }

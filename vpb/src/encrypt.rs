@@ -2,6 +2,7 @@
 use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherError};
 #[cfg(any(feature = "aes", feature = "aes-std"))]
 use aes::{Aes128, Aes192, Aes256};
+use kvstructs::bytes::Bytes;
 
 pub const BLOCK_SIZE: usize = 16;
 
@@ -58,7 +59,30 @@ impl Encryption {
     pub const fn new() -> Self {
         Self {
             algo: EncryptionAlgorithm::None,
-            secret: kvstructs::bytes::Bytes::new(),
+            secret: Bytes::new(),
+        }
+    }
+
+    /// Set the secret used to encrypt/decrypt the encrypted text.
+    #[inline]
+    pub fn set_secret(mut self, secret: Bytes) -> Self {
+        self.secret = secret;
+        self
+    }
+
+    /// Set the encryption algorithm to use.
+    #[inline]
+    pub const fn set_algorithm(mut self, algo: EncryptionAlgorithm) -> Self {
+        self.algo = algo;
+        self
+    }
+
+    #[cfg(any(feature = "aes", feature = "aes-std"))]
+    #[inline]
+    pub fn aes(secret: impl Into<Bytes>) -> Self {
+        Self {
+            algo: EncryptionAlgorithm::Aes,
+            secret: secret.into(),
         }
     }
 
@@ -85,12 +109,6 @@ impl Encryption {
     #[inline]
     pub fn secret_bytes(&self) -> kvstructs::bytes::Bytes {
         self.secret.clone()
-    }
-
-    /// Set the secret used to encrypt/decrypt the encrypted text.
-    #[inline]
-    pub fn set_secret(&mut self, secret: kvstructs::bytes::Bytes) {
-        self.secret = secret;
     }
 
     /// The block size for encryption algorithm
