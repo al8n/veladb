@@ -1,7 +1,11 @@
 use super::*;
-use crate::{binary_search, HEADER_SIZE, Header};
-use vpb::kvstructs::{KeyExt, KeyRef, ValueRef, ValueExt, bytes::{Bytes, BytesMut}, iterator::SeekFrom};
+use crate::{binary_search, Header, HEADER_SIZE};
 use core::iter::FusedIterator;
+use vpb::kvstructs::{
+    bytes::{Bytes, BytesMut},
+    iterator::SeekFrom,
+    KeyExt, KeyRef, ValueExt, ValueRef,
+};
 
 #[cfg(feature = "nightly")]
 mod nightly;
@@ -97,7 +101,10 @@ impl BlockIter {
     pub fn entry(&self) -> (KeyRef, ValueRef) {
         // shallow clone happens here, which incrs the reference
         // counter and does not copy all of the data
-        (KeyRef::new(self.key.as_ref()), ValueRef::decode_value_ref(self.val.as_ref()))
+        (
+            KeyRef::new(self.key.as_ref()),
+            ValueRef::decode_value_ref(self.val.as_ref()),
+        )
     }
 
     pub fn set_block(&mut self, block: RefCounter<Block>) {
@@ -171,7 +178,13 @@ impl BlockIter {
     }
 
     #[inline]
-    pub(crate) fn seek_to_block(&mut self, block: RefCounter<Block>, table_id: u64, block_id: isize, prev: bool) {
+    pub(crate) fn seek_to_block(
+        &mut self,
+        block: RefCounter<Block>,
+        table_id: u64,
+        block_id: isize,
+        prev: bool,
+    ) {
         self.table_id = table_id;
         self.block_id = block_id;
         self.set_block(block);
@@ -198,7 +211,9 @@ impl BlockIter {
         // set base key
         if self.base_key.is_empty() {
             let h = Header::decode(self.data.as_ref());
-            self.base_key = self.data.slice(HEADER_SIZE..HEADER_SIZE + h.diff() as usize);
+            self.base_key = self
+                .data
+                .slice(HEADER_SIZE..HEADER_SIZE + h.diff() as usize);
         }
 
         let end_offset = if self.idx + 1 == block_entry_offsets_len {
@@ -278,15 +293,14 @@ impl ExactSizeIterator for BlockIter {}
 
 impl FusedIterator for BlockIter {}
 
-
 pub enum TableIterator {
     Concat(ConcatTableIterator),
     Merge(MergeTableIterator),
     Uni(UniTableIterator<RefCounter<RawTable>>),
 }
 
-impl BableIterator for TableIterator {
-    fn next(&mut self) {
+impl TableIterator {
+    pub fn next(&mut self) {
         match self {
             TableIterator::Uni(iter) => iter.next(),
             TableIterator::Merge(iter) => iter.next(),
@@ -294,15 +308,15 @@ impl BableIterator for TableIterator {
         }
     }
 
-    fn rewind(&mut self) {
+    pub fn rewind(&mut self) {
         match self {
             TableIterator::Uni(iter) => iter.rewind(),
             TableIterator::Merge(iter) => iter.rewind(),
             TableIterator::Concat(iter) => iter.rewind(),
-        } 
+        }
     }
 
-    fn seek(&mut self, key: impl KeyExt) {
+    pub fn seek(&mut self, key: impl KeyExt) {
         match self {
             TableIterator::Uni(iter) => iter.seek(key),
             TableIterator::Merge(iter) => iter.seek(key),
@@ -310,7 +324,7 @@ impl BableIterator for TableIterator {
         }
     }
 
-    fn entry(&self) -> Option<(KeyRef, ValueRef)> {
+    pub fn entry(&self) -> Option<(KeyRef, ValueRef)> {
         match self {
             TableIterator::Uni(iter) => iter.entry(),
             TableIterator::Merge(iter) => iter.entry(),
@@ -318,7 +332,7 @@ impl BableIterator for TableIterator {
         }
     }
 
-    fn key(&self) -> Option<KeyRef> {
+    pub fn key(&self) -> Option<KeyRef> {
         match self {
             TableIterator::Uni(iter) => iter.key(),
             TableIterator::Merge(iter) => iter.key(),
@@ -326,15 +340,15 @@ impl BableIterator for TableIterator {
         }
     }
 
-    fn val(&self) -> Option<ValueRef> {
+    pub fn val(&self) -> Option<ValueRef> {
         match self {
             TableIterator::Uni(iter) => iter.val(),
             TableIterator::Merge(iter) => iter.val(),
             TableIterator::Concat(iter) => iter.val(),
-        } 
+        }
     }
 
-    fn valid(&self) -> bool {
+    pub fn valid(&self) -> bool {
         match self {
             TableIterator::Uni(iter) => iter.valid(),
             TableIterator::Merge(iter) => iter.valid(),
@@ -342,9 +356,10 @@ impl BableIterator for TableIterator {
         }
     }
 
-    fn count(&self) -> usize
-        where
-            Self: Sized, {
+    pub fn count(&self) -> usize
+    where
+        Self: Sized,
+    {
         match self {
             TableIterator::Concat(iter) => iter.count(),
             TableIterator::Merge(iter) => iter.count(),
@@ -352,12 +367,12 @@ impl BableIterator for TableIterator {
         }
     }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
+    pub fn size_hint(&self) -> (usize, Option<usize>) {
         match self {
             TableIterator::Concat(iter) => iter.size_hint(),
             TableIterator::Merge(iter) => iter.size_hint(),
             TableIterator::Uni(iter) => iter.size_hint(),
-        } 
+        }
     }
 }
 
@@ -410,7 +425,12 @@ impl<I: AsRef<RawTable>> UniTableIterator<I> {
     }
 
     #[inline]
-    fn seek_helper_block_handle(&mut self, block: Result<RefCounter<Block>>, table_id: u64, key: &[u8]) {
+    fn seek_helper_block_handle(
+        &mut self,
+        block: Result<RefCounter<Block>>,
+        table_id: u64,
+        key: &[u8],
+    ) {
         match block {
             Ok(block) => {
                 if let Some(ref mut bi) = self.bi {
@@ -443,8 +463,7 @@ impl<I: AsRef<RawTable>> UniTableIterator<I> {
         // Offsets should never return None since we're iterating within the OffsetsLength.
         binary_search(self.table.as_ref().offsets_length() as isize, |idx| {
             let block_offset = &index.offsets[idx as usize];
-            match block_offset.key.as_key_ref().compare_key
-            (key) {
+            match block_offset.key.as_key_ref().compare_key(key) {
                 core::cmp::Ordering::Less | core::cmp::Ordering::Equal => false,
                 core::cmp::Ordering::Greater => true,
             }
@@ -531,7 +550,6 @@ impl<I: AsRef<RawTable>> UniTableIterator<I> {
                     if idx == self.table.as_ref().offsets_length() as isize {
                         // If idx == self.table.block_index.len(), then input key is greater than ANY element of table.
                         // There's nothing we can do. `valid()` should return false as we seek to end of table.
-                        return;
                     } else {
                         // Since block[idx].smallest is > key. This is essentially a block[idx].SeekToFirst.
                         self.seek_helper(idx, key);
@@ -582,10 +600,10 @@ impl<I: AsRef<RawTable>> UniTableIterator<I> {
                         self.next_in();
                     }
                 }
-            },
+            }
             None => {
                 self.err = Some(IterError::EOF);
-            },
+            }
         }
     }
 
@@ -598,8 +616,8 @@ impl<I: AsRef<RawTable>> UniTableIterator<I> {
 
         let use_cache = self.use_cache();
         let table_id = self.get_table_id();
-        
-        if let Some(ref mut bi) = self.bi { 
+
+        if let Some(ref mut bi) = self.bi {
             if bi.data.is_empty() {
                 let block = self.table.as_ref().block(self.bpos, use_cache);
                 match block {
@@ -659,8 +677,7 @@ impl<I: AsRef<RawTable>> UniTableIterator<I> {
     }
 }
 
-impl<I: AsRef<RawTable>> BableIterator for UniTableIterator<I>
-{
+impl<I: AsRef<RawTable>> BableIterator for UniTableIterator<I> {
     fn next(&mut self) {
         if self.bpos == -1 {
             self.rewind();
@@ -727,7 +744,11 @@ pub struct ConcatTableIterator {
 impl ConcatTableIterator {
     pub fn new(tables: Vec<Table>, opt: usize) -> Self {
         let mut num_entries = 0;
-        let idx = if opt & REVERSED == 0 { 0 } else { tables.len() - 1 } as isize;
+        let idx = if opt & REVERSED == 0 {
+            0
+        } else {
+            tables.len() - 1
+        } as isize;
 
         let iters = tables
             .iter()
@@ -758,7 +779,7 @@ impl ConcatTableIterator {
     }
 
     fn rewind_in(&mut self) {
-        if self.iters.len() == 0 {
+        if self.iters.is_empty() {
             return;
         }
 
@@ -774,16 +795,23 @@ impl ConcatTableIterator {
 
         if self.opt & REVERSED == 0 {
             binary_search(len, |i| {
-                match self.tables[i as usize].biggest().as_key_ref().compare_key(key) {
+                match self.tables[i as usize]
+                    .biggest()
+                    .as_key_ref()
+                    .compare_key(key)
+                {
                     core::cmp::Ordering::Less => false,
                     core::cmp::Ordering::Equal | core::cmp::Ordering::Greater => true,
                 }
             })
         } else {
-            len
-                - 1
+            len - 1
                 - binary_search(len, |i| {
-                    match self.tables[(len - 1 - i) as usize].smallest().as_key_ref().compare_key(key) {
+                    match self.tables[(len - 1 - i) as usize]
+                        .smallest()
+                        .as_key_ref()
+                        .compare_key(key)
+                    {
                         core::cmp::Ordering::Less | core::cmp::Ordering::Equal => true,
                         core::cmp::Ordering::Greater => false,
                     }
@@ -832,7 +860,7 @@ impl BableIterator for ConcatTableIterator {
 
     // seek brings us to element >= key if reversed is false. Otherwise, <= key.
     fn seek(&mut self, key: impl KeyExt) {
-        let mut idx = self.get_seek_position(key.as_key_ref().as_bytes());
+        let idx = self.get_seek_position(key.as_key_ref().as_bytes());
         let len = self.iters.len() as isize;
         if idx >= len || idx < 0 {
             self.set_idx(-1);
@@ -1062,6 +1090,19 @@ impl BableIterator for MergeTableIterator {
     #[inline]
     fn valid(&self) -> bool {
         self.smaller().valid
+    }
+
+    #[inline]
+    fn count(&self) -> usize
+    where
+        Self: Sized,
+    {
+        self.num_entries
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, Some(self.num_entries))
     }
 }
 

@@ -29,7 +29,7 @@ pub enum Error {
     #[cfg(feature = "std")]
     CacheError(stretto::CacheError),
     #[cfg(feature = "std")]
-    InvalidFile(String)
+    InvalidFile(String),
 }
 
 #[cfg(feature = "std")]

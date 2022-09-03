@@ -3,21 +3,19 @@
 extern crate std;
 
 #[cfg(feature = "std")]
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::{hash_map::Entry, HashMap};
 
 #[cfg(not(feature = "std"))]
-use hashbrown::{HashMap, hash_map::Entry};
+use hashbrown::{hash_map::Entry, HashMap};
 
-use core::sync::atomic::*;
-use core::cell::UnsafeCell;
 use atomic::Atomic;
-
+use core::cell::UnsafeCell;
+use core::sync::atomic::*;
 
 pub struct MapCell<K, V> {
     inner: UnsafeCell<HashMap<K, Atomic<V>>>,
     tag: &'static str,
 }
-
 
 impl<K: core::fmt::Debug, V: core::fmt::Debug + Copy> core::fmt::Debug for MapCell<K, V> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -28,7 +26,6 @@ impl<K: core::fmt::Debug, V: core::fmt::Debug + Copy> core::fmt::Debug for MapCe
             .finish()
     }
 }
-
 
 impl<K, V> MapCell<K, V> {
     /// Safety:
@@ -46,7 +43,7 @@ impl<K, V> MapCell<K, V> {
     /// - no remove happens in inner `HashMap`, so no use after free happens.
     #[inline(always)]
     fn get_inner(&self) -> &HashMap<K, Atomic<V>> {
-        unsafe { &*self.inner.get() } 
+        unsafe { &*self.inner.get() }
     }
 
     #[inline(always)]
@@ -59,7 +56,12 @@ impl<K: core::hash::Hash + Eq, V> MapCell<K, V> {
     #[inline(always)]
     pub fn new(tag: &'static str, inner: HashMap<K, V>) -> Self {
         Self {
-            inner: UnsafeCell::new(inner.into_iter().map(|(k, v)| (k, Atomic::new(v))).collect()),
+            inner: UnsafeCell::new(
+                inner
+                    .into_iter()
+                    .map(|(k, v)| (k, Atomic::new(v)))
+                    .collect(),
+            ),
             tag,
         }
     }
@@ -81,12 +83,14 @@ impl<K: core::hash::Hash + Eq, V: Copy> MapCell<K, V> {
     }
 
     #[inline(always)]
-    pub fn update<Q>(&self, k: &Q, v: V, ordering: Ordering) 
+    pub fn update<Q>(&self, k: &Q, v: V, ordering: Ordering)
     where
         K: core::borrow::Borrow<Q>,
-        Q: core::hash::Hash + Eq, 
+        Q: core::hash::Hash + Eq,
     {
-        if let Some(val) = self.get_inner_mut().get(k) { val.store(v, ordering) }
+        if let Some(val) = self.get_inner_mut().get(k) {
+            val.store(v, ordering)
+        }
     }
 }
 
@@ -95,12 +99,14 @@ impl<K: core::hash::Hash + Eq, V: Copy + core::ops::Add<Output = V>> MapCell<K, 
     pub fn fetch_add(&self, key: K, delta: V) {
         match self.get_inner_mut().entry(key) {
             Entry::Occupied(ent) => {
-                let _ = ent.get().fetch_update(Ordering::Release, Ordering::Acquire, |v| Some(v.add(delta)));
+                let _ = ent
+                    .get()
+                    .fetch_update(Ordering::Release, Ordering::Acquire, |v| Some(v.add(delta)));
             }
             Entry::Vacant(ent) => {
                 ent.insert(Atomic::new(delta));
             }
-        } 
+        }
     }
 }
 
@@ -109,12 +115,14 @@ impl<K: core::hash::Hash + Eq, V: Copy + core::ops::Sub<Output = V>> MapCell<K, 
     pub fn fetch_sub(&self, key: K, delta: V) {
         match self.get_inner_mut().entry(key) {
             Entry::Occupied(ent) => {
-                let _ = ent.get().fetch_update(Ordering::Release, Ordering::Acquire, |v| Some(v.sub(delta)));
+                let _ = ent
+                    .get()
+                    .fetch_update(Ordering::Release, Ordering::Acquire, |v| Some(v.sub(delta)));
             }
             Entry::Vacant(ent) => {
                 ent.insert(Atomic::new(delta));
             }
-        } 
+        }
     }
 }
 

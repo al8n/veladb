@@ -1,4 +1,8 @@
-use crate::{builder::Builder, RefCounter, sync::{AtomicU64, Ordering}};
+use crate::{
+    builder::Builder,
+    sync::{AtomicU64, Ordering},
+    RefCounter,
+};
 
 use self::iterator::UniTableIterator;
 
@@ -6,7 +10,7 @@ use super::error::*;
 use vpb::{
     checksum::calculate_checksum,
     kvstructs::{bytes::Bytes, Key},
-    ChecksumAlgorithm, Marshaller, Compression,
+    ChecksumAlgorithm, Compression, Marshaller,
 };
 
 mod iterator;
@@ -29,7 +33,6 @@ const FILE_SUFFIX: &str = "sst";
 const INT_SIZE: usize = core::mem::size_of::<usize>();
 static NUM_BLOCKS: AtomicU64 = AtomicU64::new(0);
 
-
 pub struct Block {
     offset: usize,
     data: Bytes,
@@ -38,9 +41,6 @@ pub struct Block {
     entries_index_start: usize,
     /// used to binary search an entry in the block.
     pub(crate) entry_offsets: Vec<u32>,
-
-    /// checksum length.
-    cks_len: usize,
 }
 
 impl Block {
@@ -95,14 +95,15 @@ impl Table {
         self.inner.biggest()
     }
 
-   
     #[inline]
     pub fn smallest(&self) -> &Key {
         self.inner.smallest()
     }
 
     #[inline]
-    pub fn id(&self) -> u64 { self.inner.id() }
+    pub fn id(&self) -> u64 {
+        self.inner.id()
+    }
 
     #[inline]
     pub fn path(&self) -> &std::path::Path {

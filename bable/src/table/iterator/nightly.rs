@@ -1,4 +1,3 @@
-
 use super::*;
 
 pub trait TableIterator {
@@ -7,8 +6,6 @@ pub trait TableIterator {
         Self: 'a;
 
     type Value<'a>
-        where
-            Self: 'a;
-    
-    
+    where
+        Self: 'a;
 }

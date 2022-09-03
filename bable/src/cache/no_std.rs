@@ -1,7 +1,6 @@
-use lru::LruCache;
-use core::cell::UnsafeCell;
 use super::*;
-
+use core::cell::UnsafeCell;
+use lru::LruCache;
 
 #[derive(Clone)]
 #[repr(transparent)]
@@ -26,10 +25,9 @@ impl IndexCache {
     /// Safety: this method will only be used in single thread feature
     #[inline]
     pub fn insert(&self, k: u64, value: RefCounter<TableIndex>) {
-        unsafe { &mut *self.inner.get() }.push(k, value); 
+        unsafe { &mut *self.inner.get() }.push(k, value);
     }
 }
-
 
 #[derive(Clone)]
 #[repr(transparent)]
@@ -54,6 +52,6 @@ impl BlockCache {
     /// Safety: this method will only be used in single thread feature
     #[inline]
     pub fn insert(&self, k: Bytes, value: RefCounter<Block>) {
-        unsafe { &mut *self.inner.get() }.push(k, value); 
+        unsafe { &mut *self.inner.get() }.push(k, value);
     }
 }

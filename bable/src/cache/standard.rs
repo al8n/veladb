@@ -1,5 +1,5 @@
-use stretto::{Cache, CacheCallback, Coster, KeyBuilder, UpdateValidator, TransparentKeyBuilder};
 use super::*;
+use stretto::{Cache, CacheCallback, Coster, KeyBuilder, TransparentKeyBuilder, UpdateValidator};
 
 #[doc(hidden)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -34,7 +34,14 @@ impl CacheCallback for NoopIndex {
 #[repr(transparent)]
 pub struct IndexCache(
     RefCounter<
-        Cache<u64, RefCounter<TableIndex>, TransparentKeyBuilder<u64>, NoopIndex, NoopIndex, NoopIndex>,
+        Cache<
+            u64,
+            RefCounter<TableIndex>,
+            TransparentKeyBuilder<u64>,
+            NoopIndex,
+            NoopIndex,
+            NoopIndex,
+        >,
     >,
 );
 
@@ -52,8 +59,14 @@ impl IndexCache {
 }
 
 impl core::ops::Deref for IndexCache {
-    type Target =
-        Cache<u64, RefCounter<TableIndex>, TransparentKeyBuilder<u64>, NoopIndex, NoopIndex, NoopIndex>;
+    type Target = Cache<
+        u64,
+        RefCounter<TableIndex>,
+        TransparentKeyBuilder<u64>,
+        NoopIndex,
+        NoopIndex,
+        NoopIndex,
+    >;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -117,7 +130,7 @@ impl KeyBuilder for BlockKeyBuilder {
     type Key = Bytes;
 
     #[inline]
-    fn hash_index<Q>(&self, key: &Q) -> u64 
+    fn hash_index<Q>(&self, key: &Q) -> u64
     where
         Self::Key: core::borrow::Borrow<Q>,
         Q: core::hash::Hash + Eq + ?Sized,
@@ -130,10 +143,10 @@ impl KeyBuilder for BlockKeyBuilder {
     }
 
     #[inline]
-    fn hash_conflict<Q>(&self, key: &Q) -> u64 
-        where
-            Self::Key: core::borrow::Borrow<Q>,
-            Q: core::hash::Hash + Eq + ?Sized,
+    fn hash_conflict<Q>(&self, key: &Q) -> u64
+    where
+        Self::Key: core::borrow::Borrow<Q>,
+        Q: core::hash::Hash + Eq + ?Sized,
     {
         use core::hash::{BuildHasher, Hasher};
         let mut x = self.xx.build_hasher();

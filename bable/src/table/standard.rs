@@ -1,15 +1,25 @@
 use std::path::{Path, PathBuf};
 
-use fmmap::{MmapFileExt, MmapFileMut, MetaDataExt, MmapFileMutExt};
+use fmmap::{MetaDataExt, MmapFileExt, MmapFileMut, MmapFileMutExt};
 use vpb::{
     checksum::Checksumer,
+    compression::Compressor,
     encrypt::Encryptor,
-    kvstructs::{bytes::{Bytes, BytesMut, BufMut}, Key, KeyExt},
-    BlockOffset, Checksum, Compression, Marshaller, TableIndex, compression::Compressor,
+    kvstructs::{
+        bytes::{Buf, BufMut, Bytes, BytesMut},
+        Key, KeyExt,
+    },
+    BlockOffset, Checksum, Compression, Marshaller, TableIndex,
 };
 
-use super::{CheapIndex, NUM_BLOCKS, Ordering, FILE_SUFFIX, Builder, iterator::UniTableIterator};
-use crate::{bloom::MayContain, error::*, options::{TableOptions, ChecksumVerificationMode}, sync::AtomicU32, RefCounter, Block};
+use super::{iterator::UniTableIterator, Builder, CheapIndex, Ordering, FILE_SUFFIX, NUM_BLOCKS};
+use crate::{
+    bloom::MayContain,
+    error::*,
+    options::{ChecksumVerificationMode, TableOptions},
+    sync::AtomicU32,
+    Block, RefCounter,
+};
 
 impl super::Table {
     pub fn create_table<P: AsRef<Path>>(path: P, builder: Builder) -> Result<Self> {
@@ -23,7 +33,6 @@ impl super::Table {
 
             // TODO: check written bytes
             let written = bd.write(&mut mmap)?;
-            eprintln!("{:?}", &mmap.as_slice()[..written]);
             mmap.flush()
                 .map_err(|e| {
                     #[cfg(feature = "tracing")]
@@ -60,7 +69,11 @@ impl super::Table {
 
     /// open_in_memory_table is similar to OpenTable but it opens a new table from the provided data.
     /// open_in_memory_table is used for L0 tables.
-    pub fn open_in_memory_table(data: Vec<u8>, id: u64, opts: RefCounter<TableOptions>) -> Result<Self> {
+    pub fn open_in_memory_table(
+        data: Vec<u8>,
+        id: u64,
+        opts: RefCounter<TableOptions>,
+    ) -> Result<Self> {
         let tbl_size = data.len();
         let mut this = RawTable {
             mmap: MmapFileMut::memory_from_vec("memory.sst", data),
@@ -139,15 +152,13 @@ impl super::Table {
             this.opts.checksum_verification_mode(),
             ChecksumVerificationMode::OnTableRead | ChecksumVerificationMode::OnTableAndBlockRead
         ) {
-            return this.verify_checksum()
-                .map(|_| this.into())
-                .map_err(|e| {
-                    #[cfg(feature = "tracing")]
-                    {
-                        tracing::error!(target: "table", err = %e, info = "failed to verify checksum");
-                    }
-                    e
-                });
+            return this.verify_checksum().map(|_| this.into()).map_err(|e| {
+                #[cfg(feature = "tracing")]
+                {
+                    tracing::error!(target: "table", err = %e, info = "failed to verify checksum");
+                }
+                e
+            });
         }
         Ok(this.into())
     }
@@ -192,19 +203,20 @@ impl AsRef<RawTable> for RawTable {
 }
 
 impl RawTable {
-
     #[inline]
     pub(super) fn biggest(&self) -> &Key {
         &self.biggest
     }
-   
+
     #[inline]
     pub(super) fn smallest(&self) -> &Key {
         &self.smallest
     }
 
     #[inline]
-    pub(super) fn id(&self) -> u64 { self.id }
+    pub(super) fn id(&self) -> u64 {
+        self.id
+    }
 
     #[inline]
     pub(super) fn path(&self) -> &std::path::Path {
@@ -341,14 +353,14 @@ impl RawTable {
                 {
                     tracing::error!(target: "table", info = "checksum verification failed", err = %e);
                 }
-               
                 Error::BlockChecksumMismatch { table: self.path().to_string_lossy().to_string(), block: i as usize}
             })?;
             // OnBlockRead or OnTableAndBlockRead, we don't need to call verify checksum
             // on block, verification would be done while reading block itself.
             if !matches!(
                 self.opts.checksum_verification_mode(),
-                ChecksumVerificationMode::OnBlockRead | ChecksumVerificationMode::OnTableAndBlockRead
+                ChecksumVerificationMode::OnBlockRead
+                    | ChecksumVerificationMode::OnTableAndBlockRead
             ) {
                 Block::verify_checksum(&blk, TableOptions::checksum(&self.opts))
                     .map_err(|e| {
@@ -404,7 +416,10 @@ impl RawTable {
     fn block_inner(&self, idx: isize) -> Result<RefCounter<Block>> {
         assert!(idx >= 0, "idx={}", idx);
         if idx >= self.offsets_length() as isize {
-            return Err(Error::BlockOutOfRange { num_offsets: self.offsets_length() as u64, index: idx as u64 });
+            return Err(Error::BlockOutOfRange {
+                num_offsets: self.offsets_length() as u64,
+                index: idx as u64,
+            });
         }
 
         let idx = idx as usize;
@@ -434,54 +449,57 @@ impl RawTable {
         })?;
 
         let encryption = self.opts.encryption();
-        
-        let data = if encryption.is_some() {
+
+        let data: Bytes = if encryption.is_some() {
             let v = self.decrypt(data)?;
             v.decompress_into_vec(self.opts.compression())
                 .map(From::from)
                 .map_err(Error::Compression)?
         } else {
             data.decompress_into_vec(self.opts.compression())
-            .map(From::from)
-            .map_err(Error::Compression)?
+                .map(From::from)
+                .map_err(Error::Compression)?
         };
 
-        let mut blk = Block {
-            offset,
-            data,
-            checksum: Default::default(),
-            entries_index_start: 0,
-            entry_offsets: vec![],
-            cks_len: 0,
-        };
-
-        let blk_data_len = blk.data.len();
+        let blk_data_len = data.len();
         // Read meta data related to block.
         let mut read_pos = blk_data_len - 4; // First read checksum length
-        blk.cks_len = u32::from_be_bytes((&blk.data[read_pos..read_pos + 4]).try_into().unwrap()) as usize;
+        let cks_len =
+            u32::from_be_bytes((&data[read_pos..read_pos + 4]).try_into().unwrap()) as usize;
 
         // Checksum length greater than block size could happen if the table was compressed and
         // it was opened with an incorrect compression algorithm (or the data was corrupted).
-        if blk.cks_len > blk_data_len {
+        if cks_len > blk_data_len {
             return Err(Error::InvalidChecksumLength);
         }
 
         // Read checksum and store it
-        read_pos -= blk.cks_len;
-        blk.checksum = blk.data.slice(read_pos..read_pos + blk.cks_len);
+        read_pos -= cks_len;
+        let checksum = data.slice(read_pos..read_pos + cks_len);
         // Move back and read numEntries in the block.
         read_pos -= 4;
-        let num_entries = u32::from_be_bytes((&blk.data[read_pos..read_pos + 4]).try_into().unwrap()) as usize;
+        let num_entries =
+            u32::from_be_bytes((&data[read_pos..read_pos + 4]).try_into().unwrap()) as usize;
         let entries_index_start = read_pos - (num_entries * 4);
         let entries_index_end = entries_index_start + (num_entries * 4);
-        let mut entries = vec![0; num_entries * 4];
-        entries.copy_from_slice(&blk.data[entries_index_start..entries_index_end]);
-        blk.entry_offsets = unsafe { core::mem::transmute(entries) };
-        blk.entries_index_start = entries_index_start;
+        let raw_entries = &data[entries_index_start..entries_index_end];
+        let mut entry_offsets = Vec::with_capacity(num_entries);
+        for i in 0..num_entries {
+            entry_offsets.push(u32::from_be_bytes(
+                raw_entries[i * 4..(i + 1) * 4].try_into().unwrap(),
+            ));
+        }
+
+        let blk = Block {
+            offset,
+            data: data.slice(..read_pos + 4),
+            checksum,
+            entries_index_start,
+            entry_offsets,
+        };
 
         // Drop checksum and checksum length.
         // The checksum is calculated for actual data + entry index + index length
-        blk.data = blk.data.slice(..read_pos + 4);
         // Verify checksum on if checksum verification mode is OnRead on OnStartAndRead.
         if matches!(
             self.opts.checksum_verification_mode(),
@@ -662,7 +680,6 @@ impl RawTable {
     }
 }
 
-
 /// parse_file_id reads the file id out of a filename.
 #[inline]
 pub fn parse_file_id<P: AsRef<Path>>(path: P) -> (u64, bool) {
@@ -672,9 +689,12 @@ pub fn parse_file_id<P: AsRef<Path>>(path: P) -> (u64, bool) {
         }
 
         if let Some(name) = path.as_ref().file_stem() {
-            
             name.to_str()
-                .map(|sid| sid.parse::<u64>().map(|id| (id, true)).unwrap_or((0, false)))
+                .map(|sid| {
+                    sid.parse::<u64>()
+                        .map(|id| (id, true))
+                        .unwrap_or((0, false))
+                })
                 .unwrap_or((0, false))
         } else {
             (0, false)

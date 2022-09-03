@@ -3,22 +3,20 @@ use crate::TableOptions;
 use rand::{thread_rng, Rng};
 use std::sync::Arc;
 use std::thread::spawn;
+use vpb::kvstructs::{KeyExt, Value, ValueExt};
 use zallocator::pool::AllocatorPool;
-use vpb::kvstructs::{Value, KeyExt, ValueExt};
-
-
 
 fn key(prefix: &str, i: isize) -> String {
     format!("{}{:04}", prefix, i)
 }
 
-
 pub(crate) fn get_test_table_options() -> TableOptions {
     use crate::MAX_ALLOCATOR_INITIAL_SIZE;
 
-    TableOptions::default_with_pool(AllocatorPool::new(((2 << 20) * 2).min(MAX_ALLOCATOR_INITIAL_SIZE)))
+    TableOptions::default_with_pool(AllocatorPool::new(
+        ((2 << 20) * 2).min(MAX_ALLOCATOR_INITIAL_SIZE),
+    ))
 }
-
 
 #[derive(PartialEq, Eq)]
 pub(crate) struct KV {
@@ -26,20 +24,17 @@ pub(crate) struct KV {
     data: Vec<Vec<u8>>,
 }
 
-
 impl PartialOrd<Self> for KV {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-
 impl Ord for KV {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.data[0].cmp(&other.data[0])
     }
 }
-
 
 fn build_test_table(prefix: &str, n: usize, mut opts: TableOptions) -> Result<Table> {
     if opts.block_size().eq(&0) {
@@ -59,7 +54,6 @@ fn build_test_table(prefix: &str, n: usize, mut opts: TableOptions) -> Result<Ta
     build_table(key_values, opts)
 }
 
-
 fn build_table(mut key_values: Vec<KV>, opts: TableOptions) -> Result<Table> {
     let mut b = Builder::new(RefCounter::new(opts)).unwrap();
     let mut rng = thread_rng();
@@ -71,13 +65,7 @@ fn build_table(mut key_values: Vec<KV>, opts: TableOptions) -> Result<Table> {
         assert_eq!(kv.data.len(), 2);
         b.insert(
             Key::from(kv.data[0].clone()).with_timestamp(0),
-            Value::with_all_fields(
-                'A' as u8,
-                0,
-                0,
-                0,
-                Bytes::from(kv.data[1].clone()),
-            ),
+            Value::with_all_fields('A' as u8, 0, 0, 0, Bytes::from(kv.data[1].clone())),
             0,
         );
     });
@@ -95,12 +83,12 @@ fn test_table_big_value() {
     let mut rng = thread_rng();
 
     let n = 100usize;
-    let opts = get_test_table_options().set_table_size((n as u64) << 20)
-    .set_block_size(4 * 1024)
-    .set_bloom_ratio(0.01);
+    let opts = get_test_table_options()
+        .set_table_size((n as u64) << 20)
+        .set_block_size(4 * 1024)
+        .set_bloom_ratio(0.01);
     let mut builder = Builder::new(RefCounter::new(opts)).unwrap();
     for i in 0..n {
-        eprintln!("{}", i);
         let k = Key::from(key("", i as isize)).with_timestamp((i + 1) as u64);
         let v = Value::from(val(i));
         builder.insert(k, v, 0)
@@ -111,14 +99,17 @@ fn test_table_big_value() {
     filename.push(rng.gen::<u32>().to_string());
     filename.set_extension("sst");
 
-    
     let tbl = Table::create_table(filename, builder).unwrap();
+
     let mut iter = tbl.iter(0);
     iter.next();
     let mut cnt = 0;
     while iter.valid() {
         assert_eq!(key("", cnt).as_bytes(), iter.key().unwrap().parse_key());
-        assert_eq!(val(cnt as usize).as_ref(), iter.val().unwrap().parse_value());
+        assert_eq!(
+            val(cnt as usize).as_ref(),
+            iter.val().unwrap().parse_value()
+        );
         cnt += 1;
         iter.next();
     }
@@ -172,7 +163,11 @@ fn test_max_version() {
 
     let n = 1000;
     for i in 0..n {
-        b.insert(Key::from(format!("foo:{}", i)).with_timestamp(i + 1), Value::default(), 0);
+        b.insert(
+            Key::from(format!("foo:{}", i)).with_timestamp(i + 1),
+            Value::default(),
+            0,
+        );
     }
 
     let tbl = Table::create_table(filename, b).unwrap();
@@ -511,7 +506,10 @@ fn test_uni_iterator() {
     let mut cnt = 0;
     iter.next();
     for _ in 0..iter.count() {
-        assert_eq!(format!("{}", cnt).as_bytes(), iter.val().unwrap().parse_value());
+        assert_eq!(
+            format!("{}", cnt).as_bytes(),
+            iter.val().unwrap().parse_value()
+        );
         assert_eq!('A' as u8, iter.val().unwrap().get_meta());
         cnt += 1;
         iter.next();
@@ -528,7 +526,10 @@ fn test_uni_iterator_reverse() {
     let mut cnt = 0;
     iter.next();
     for _ in 0..iter.count() {
-        assert_eq!(format!("{}", n - 1 - cnt).as_bytes(), iter.val().unwrap().parse_value());
+        assert_eq!(
+            format!("{}", n - 1 - cnt).as_bytes(),
+            iter.val().unwrap().parse_value()
+        );
         assert_eq!('A' as u8, iter.val().unwrap().get_meta());
         cnt += 1;
         iter.next();
@@ -549,26 +550,45 @@ fn test_concat_iterator() {
         let mut cnt = 0;
         it.rewind();
         while it.valid() {
-            assert_eq!(format!("{}", cnt % n).as_bytes(), it.val().unwrap().parse_value());
+            assert_eq!(
+                format!("{}", cnt % n).as_bytes(),
+                it.val().unwrap().parse_value()
+            );
             assert_eq!('A' as u8, it.val().unwrap().get_meta());
             cnt += 1;
             it.next();
         }
 
         assert_eq!(cnt, n * 3);
-        it.seek(Key::from("a".as_bytes().to_vec()).with_timestamp(0).as_slice());
+        it.seek(
+            Key::from("a".as_bytes().to_vec())
+                .with_timestamp(0)
+                .as_slice(),
+        );
         assert_eq!("keya0000".as_bytes(), it.key().unwrap().parse_key());
         assert_eq!("0".as_bytes(), it.val().unwrap().parse_value());
 
-        it.seek(Key::from("keyb".as_bytes().to_vec()).with_timestamp(0).as_slice());
+        it.seek(
+            Key::from("keyb".as_bytes().to_vec())
+                .with_timestamp(0)
+                .as_slice(),
+        );
         assert_eq!("keyb0000".as_bytes(), it.key().unwrap().parse_key());
         assert_eq!("0".as_bytes(), it.val().unwrap().parse_value());
 
-        it.seek(Key::from("keyb9999b".as_bytes().to_vec()).with_timestamp(0).as_slice());
+        it.seek(
+            Key::from("keyb9999b".as_bytes().to_vec())
+                .with_timestamp(0)
+                .as_slice(),
+        );
         assert_eq!("keyc0000".as_bytes(), it.key().unwrap().parse_key());
         assert_eq!("0".as_bytes(), it.val().unwrap().parse_value());
 
-        it.seek(Key::from("keyd".as_bytes().to_vec()).with_timestamp(0).as_slice());
+        it.seek(
+            Key::from("keyd".as_bytes().to_vec())
+                .with_timestamp(0)
+                .as_slice(),
+        );
         assert!(!it.valid());
     }
 }
@@ -587,7 +607,10 @@ fn test_concat_iterator_reversed() {
         let mut cnt = 0;
         it.rewind();
         while it.valid() {
-            assert_eq!(format!("{}", n - (cnt % n) - 1).as_bytes(), it.val().unwrap().parse_value());
+            assert_eq!(
+                format!("{}", n - (cnt % n) - 1).as_bytes(),
+                it.val().unwrap().parse_value()
+            );
             assert_eq!('A' as u8, it.val().unwrap().get_meta());
             cnt += 1;
             it.next();
@@ -595,18 +618,34 @@ fn test_concat_iterator_reversed() {
 
         assert_eq!(cnt, n * 3);
 
-        it.seek(Key::from("a".as_bytes().to_vec()).with_timestamp(0).as_slice());
+        it.seek(
+            Key::from("a".as_bytes().to_vec())
+                .with_timestamp(0)
+                .as_slice(),
+        );
         assert!(!it.valid());
 
-        it.seek(Key::from("keyb".as_bytes().to_vec()).with_timestamp(0).as_slice());
+        it.seek(
+            Key::from("keyb".as_bytes().to_vec())
+                .with_timestamp(0)
+                .as_slice(),
+        );
         assert_eq!("keya9999".as_bytes(), it.key().unwrap().parse_key());
         assert_eq!("9999".as_bytes(), it.val().unwrap().parse_value());
 
-        it.seek(Key::from("keyb9999b".as_bytes().to_vec()).with_timestamp(0).as_slice());
+        it.seek(
+            Key::from("keyb9999b".as_bytes().to_vec())
+                .with_timestamp(0)
+                .as_slice(),
+        );
         assert_eq!("keyb9999".as_bytes(), it.key().unwrap().parse_key());
         assert_eq!("9999".as_bytes(), it.val().unwrap().parse_value());
 
-        it.seek(Key::from("keyd".as_bytes().to_vec()).with_timestamp(0).as_slice());
+        it.seek(
+            Key::from("keyd".as_bytes().to_vec())
+                .with_timestamp(0)
+                .as_slice(),
+        );
         assert_eq!("keyc9999".as_bytes(), it.key().unwrap().parse_key());
         assert_eq!("9999".as_bytes(), it.val().unwrap().parse_value());
     }
@@ -653,7 +692,13 @@ fn test_merging_iterator() {
     )
     .unwrap();
 
-    let expected = vec![("k1", "a1"), ("k2", "b2"), ("k3", "b3"), ("k4", "a4"), ("k5", "a5")];
+    let expected = vec![
+        ("k1", "a1"),
+        ("k2", "b2"),
+        ("k3", "b3"),
+        ("k4", "a4"),
+        ("k5", "a5"),
+    ];
     let it1 = tbl1.iter(0);
     let it2 = ConcatTableIterator::new(vec![tbl2], 0);
     let mut it = MergeTableIterator::new(
@@ -729,7 +774,13 @@ fn test_merging_iterator_reversed() {
     )
     .unwrap();
 
-    let expected = vec![("k5", "a5"), ("k4", "a4"), ("k3", "b3"), ("k2", "a2"), ("k1", "a1")];
+    let expected = vec![
+        ("k5", "a5"),
+        ("k4", "a4"),
+        ("k3", "b3"),
+        ("k2", "a2"),
+        ("k1", "a1"),
+    ];
 
     let it1 = tbl1.iter(REVERSED);
     let it2 = ConcatTableIterator::new(vec![tbl2], REVERSED);

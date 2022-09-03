@@ -54,7 +54,7 @@ impl Header {
     pub fn decode(buf: &[u8]) -> Self {
         Self {
             overlap: u16::from_le_bytes(buf[..2].try_into().unwrap()),
-            diff: u16::from_le_bytes(buf[2..].try_into().unwrap()),
+            diff: u16::from_le_bytes(buf[2..4].try_into().unwrap()),
         }
     }
 
@@ -132,7 +132,7 @@ impl BBlock {
     #[inline(always)]
     pub(crate) fn dangling() -> Self {
         Self {
-            inner: RefCounter::new(NonNull::dangling()),
+            inner: RefCounter::new(unsafe { NonNull::new_unchecked(core::ptr::null_mut()) }),
         }
     }
 
@@ -423,8 +423,12 @@ impl Builder {
 
         let cur_block_end = self.cur_block.end();
 
+        let buffer = self.allocate(entries_len * 4);
+        let buf_data = buffer.as_mut_slice();
         // Append the entryOffsets and its length.
-        unsafe { self.append(core::mem::transmute(entries)) }
+        for i in 0..entries_len {
+            buf_data[i * 4..(i * 4) + 4].copy_from_slice(&entries[i].to_be_bytes());
+        }
         self.append(&(entries_len as u32).to_be_bytes());
 
         // Append the block checksum and its length.
@@ -586,7 +590,13 @@ impl Builder {
                 .min(zallocator::Zallocator::MAX_ALLOC)
                 .max((prev_end + need) as u64);
             let tmp = self.alloc.allocate_unchecked(sz);
-            tmp.copy_from_slice(data);
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    data.as_ref()[..prev_end].as_ptr(),
+                    tmp.as_mut_ptr(),
+                    prev_end,
+                );
+            }
             self.cur_block.set_data(tmp);
         }
 

@@ -721,14 +721,14 @@ impl Buffer {
     }
 
     /// Set the end position of the buffer
-    /// 
+    ///
     /// # Panics
     /// Panics if the end position is greater than the capacity of the buffer.
     #[inline(always)]
     pub fn set_end(&mut self, end: usize) {
         assert!(end <= self.cap);
         self.end = end;
-    } 
+    }
 
     /// Returns a new buffer of self for the provided range.
     ///
@@ -787,8 +787,11 @@ impl Buffer {
             len,
         );
         assert!(
-            (self.start + start).checked_add(end).expect("out of range") <= self.end,
-            "out of range 1"
+            (self.start + start)
+                .checked_add(end - start)
+                .expect("out of range")
+                <= self.end,
+            "out of range"
         );
         (start, end)
     }
