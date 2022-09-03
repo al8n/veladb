@@ -341,6 +341,24 @@ impl BableIterator for TableIterator {
             TableIterator::Concat(iter) => iter.valid(),
         }
     }
+
+    fn count(&self) -> usize
+        where
+            Self: Sized, {
+        match self {
+            TableIterator::Concat(iter) => iter.count(),
+            TableIterator::Merge(iter) => iter.count(),
+            TableIterator::Uni(iter) => iter.count(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            TableIterator::Concat(iter) => iter.size_hint(),
+            TableIterator::Merge(iter) => iter.size_hint(),
+            TableIterator::Uni(iter) => iter.size_hint(),
+        } 
+    }
 }
 
 impl From<UniTableIterator<RefCounter<RawTable>>> for TableIterator {
