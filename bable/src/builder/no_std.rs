@@ -74,7 +74,7 @@ impl Builder {
 
 impl super::BuildData {
     #[inline]
-    pub(crate) fn write(self, dst: &mut BytesMut) -> usize {
+    pub fn write(self, dst: &mut BytesMut) -> usize {
         let mut written = 0;
         for blk in &self.block_list {
             let end = blk.end();

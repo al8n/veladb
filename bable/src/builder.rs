@@ -182,11 +182,6 @@ impl BBlock {
     }
 
     #[inline(always)]
-    pub(crate) fn is_empty(&self) -> bool {
-        self.inner().entry_offsets.is_empty()
-    }
-
-    #[inline(always)]
     pub(crate) fn push_entry_offset(&self, offset: u32) {
         self.inner_mut().entry_offsets.push(offset);
     }

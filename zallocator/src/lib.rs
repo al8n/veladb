@@ -714,22 +714,6 @@ impl Buffer {
         unsafe { from_raw_parts(self.ptr.add(self.start), self.capacity()) }
     }
 
-    /// Set the start position of the buffer
-    #[inline(always)]
-    pub fn set_start(&mut self, start: usize) {
-        self.start = start;
-    }
-
-    /// Set the end position of the buffer
-    ///
-    /// # Panics
-    /// Panics if the end position is greater than the capacity of the buffer.
-    #[inline(always)]
-    pub fn set_end(&mut self, end: usize) {
-        assert!(end <= self.cap);
-        self.end = end;
-    }
-
     /// Returns a new buffer of self for the provided range.
     ///
     /// # Panics
