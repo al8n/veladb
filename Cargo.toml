@@ -2,8 +2,8 @@
 members = [
   "bable",
   "core",
-  "mapcell",
   "kvstructs",
+  "mapcell",
   "vpb",
   "wisc",
   "zallocator"

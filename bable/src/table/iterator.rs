@@ -792,7 +792,6 @@ impl ConcatTableIterator {
 
     fn get_seek_position(&self, key: &[u8]) -> isize {
         let len = self.iters.len() as isize;
-
         if self.opt & REVERSED == 0 {
             binary_search(len, |i| {
                 match self.tables[i as usize]

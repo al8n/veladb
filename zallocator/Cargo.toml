@@ -10,9 +10,6 @@ description = "Amortizes the cost of small allocations by allocating memory in b
 keywords = ["allocator", "memory"]
 categories = ["data-structures", "no-std", "concurrency"]
 
-# [workspace]
-# members = [".", "integration"]
-
 [[bench]]
 name = "allocator"
 path = "benches/bench.rs"
@@ -30,27 +27,27 @@ threadpool = ["crossbeam-channel"]
 nightly = ["crossbeam-utils/nightly"]
 
 [dependencies]
-crossbeam-queue = { version = "0.3", default-features = false, features = ["alloc"] }
-crossbeam-channel = { version = "0.5", optional = true }
-crossbeam-utils = { version = "0.8", default-features = false }
-futures = { version = "0.3", optional = true }
-lazy_static = { version = "1.4", optional = true, default-features = false }
-hashbrown = { version = "0.12", optional = true }
-pollster = { version = "0.2", optional = true }
-parking_lot = { version = "0.12", optional = true }
-rand = { version = "0.8", optional = true, default-features = false }
-getrandom = { version = "0.2", optional = true }
-spin = { version = "0.9", optional = true }
-triomphe = { version = "0.1", default-features = false }
 async-channel = { version = "1.7", optional = true }
 async-io = { version = "1.8", optional = true }
+crossbeam-channel = { version = "0.5", optional = true }
+crossbeam-queue = { version = "0.3", default-features = false, features = ["alloc"] }
+crossbeam-utils = { version = "0.8", default-features = false }
+futures = { version = "0.3", optional = true }
+getrandom = { version = "0.2", optional = true }
+hashbrown = { version = "0.12", optional = true }
+lazy_static = { version = "1.4", optional = true, default-features = false }
+parking_lot = { version = "0.12", optional = true }
+pollster = { version = "0.2", optional = true }
+rand = { version = "0.8", optional = true, default-features = false }
+spin = { version = "0.9", optional = true }
+triomphe = { version = "0.1", default-features = false }
 
 [dev-dependencies]
+criterion = "0.3"
+futures = "0.3"
+rand = "0.8"
 tokio = { version = "1.19", features = ["full"] }
 tokio-test = "0.4"
-futures = "0.3"
-criterion = "0.3"
-rand = "0.8"
 
 [target.'cfg(loom)'.dev-dependencies]
 loom = "0.5"

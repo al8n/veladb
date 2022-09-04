@@ -33,28 +33,26 @@ harness = false
 [dependencies]
 bytemuck = { version = "1.2", features = ["aarch64_simd", "wasm_simd"] }
 crossbeam-channel = { version = "0.5", optional = true }
-crossbeam-utils = { version = "0.8", optional = true }
 crossbeam-queue = { version = "0.3", default-features = false, features = ["alloc"] }
-enum_dispatch = { version = "0.3" }
+crossbeam-utils = { version = "0.8", optional = true }
 fmmap = { version = "0.3", optional = true }
 getrandom = { version = "0.2", optional = true, default-features = false }
 hashbrown = { version = "0.12", default-features = false, optional = true }
-lru = { version = "0.7", default-features = false }
 lazy_static = { version = "1.4", optional = true, default-features = false }
+lru = { version = "0.7", default-features = false }
 mapcell = { path = "../mapcell", optional = true, default-features = false }
 num_cpus = { version = "1.13", optional = true }
 parking_lot = { version = "0.12", optional = true }
 rand = { version = "0.8", default-features = false }
-stretto = { version = "0.7", optional = true, default-features = false }
 scopeguard = { version = "1.1", optional = true }
+stretto = { version = "0.7", optional = true, default-features = false }
 tracing = { version = "0.1", optional = true, default-features = false }
-triomphe = { version = "0.1.7", default-features = false }
+triomphe = { version = "0.1", default-features = false }
 vpb = { path = "../vpb", default-features = false, features = ["sea", "xxhash64"] }
 zallocator = { path = "../zallocator", default-features = false }
 
 [target.'cfg(not(target_env = "msvc"))'.dev-dependencies]
 tikv-jemallocator = "0.5"
-
 
 [dev-dependencies]
 criterion = "0.3"

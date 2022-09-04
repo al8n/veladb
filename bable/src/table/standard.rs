@@ -17,7 +17,7 @@ use crate::{
     bloom::MayContain,
     error::*,
     options::{ChecksumVerificationMode, TableOptions},
-    Block, RefCounter,
+    BableIterator, Block, RefCounter, NO_CACHE, REVERSED,
 };
 
 impl super::Table {
@@ -560,7 +560,21 @@ impl RawTable {
         match self.init_index() {
             Ok(ko) => {
                 self.smallest = Key::from(ko.key);
-                // TODO: iter to find the biggest
+                let mut iter = self.iter(REVERSED | NO_CACHE);
+                iter.rewind();
+                if !iter.valid() {
+                    #[cfg(feature = "tracing")]
+                    {
+                        tracing::error!(target: "table", "failed to initialize biggest key for table: {}", self.path().display());
+                    }
+                    panic!(
+                        "failed to initialize biggest key for table: {}",
+                        self.path().display()
+                    );
+                }
+                if let Some(key) = iter.key() {
+                    self.biggest = key.to_key();
+                }
             }
             Err(e) => {
                 // This defer will help gathering debugging info incase initIndex crashes.
