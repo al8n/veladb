@@ -1,8 +1,8 @@
 [package]
 name = "kvstructs"
-version = "0.0.24"
+version = "0.1.0"
 edition = "2021"
-repository = "https://github.com/al8n/kvstructs"
+repository = "https://github.com/al8n/veladb/tree/main/kvstructs"
 description = "General basic key-value structs for Key-Value based storages."
 license = "MIT/Apache-2.0"
 keywords = ["kv", "key-value", "data-structures", "key-value-store"]

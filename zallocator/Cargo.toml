@@ -1,10 +1,10 @@
 [package]
 name = "zallocator"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Al Liu <scygliu1@gmail.com>"]
 edition = "2021"
 license = "MIT/Apache-2.0"
-repository = "https://github.com/al8n/zallocator"
+repository = "https://github.com/al8n/veladb/tree/main/zallocator"
 documentation = "https://docs.rs/zallocator"
 description = "Amortizes the cost of small allocations by allocating memory in bigger chunks."
 keywords = ["allocator", "memory"]
