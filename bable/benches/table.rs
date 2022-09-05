@@ -1,4 +1,4 @@
-use bable::{BableIterator, Builder, RefCounter, Table, TableOptions};
+use bable::{BableIterator, Builder, Flag, Options, RefCounter, Table, TableBuilder};
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use rand::{thread_rng, Rng, RngCore};
 use scopeguard::defer;
@@ -24,7 +24,7 @@ pub fn rand_value() -> Vec<u8> {
 
 fn get_table_for_bench(count: usize) -> Table {
     let opts =
-        TableOptions::default_with_pool(AllocatorPool::new(1)).set_compression(vpb::Compression {
+        Options::default_with_pool(AllocatorPool::new(1)).set_compression(vpb::Compression {
             algo: vpb::CompressionAlgorithm::None,
             level: 0,
         });
@@ -61,12 +61,10 @@ fn bench_table_builder(c: &mut Criterion) {
         let vs = Value::from(rand_value());
 
         let opt = RefCounter::new(
-            TableOptions::default_with_pool(AllocatorPool::new(1)).set_compression(
-                vpb::Compression {
-                    algo: vpb::CompressionAlgorithm::None,
-                    level: 0,
-                },
-            ),
+            Options::default_with_pool(AllocatorPool::new(1)).set_compression(vpb::Compression {
+                algo: vpb::CompressionAlgorithm::None,
+                level: 0,
+            }),
         );
 
         b.iter(|| {
@@ -91,12 +89,10 @@ fn bench_table_builder(c: &mut Criterion) {
         let vs = Value::from(rand_value());
 
         let opt = RefCounter::new(
-            TableOptions::default_with_pool(AllocatorPool::new(1)).set_compression(
-                vpb::Compression {
-                    algo: vpb::CompressionAlgorithm::None,
-                    level: 0,
-                },
-            ),
+            Options::default_with_pool(AllocatorPool::new(1)).set_compression(vpb::Compression {
+                algo: vpb::CompressionAlgorithm::None,
+                level: 0,
+            }),
         );
 
         b.iter(|| {
@@ -121,7 +117,7 @@ fn bench_table_builder(c: &mut Criterion) {
         let vs = Value::from(rand_value());
 
         let opt = RefCounter::new(
-            TableOptions::default_with_pool(AllocatorPool::new(1)).set_compression(
+            Options::default_with_pool(AllocatorPool::new(1)).set_compression(
                 vpb::Compression::new().set_algorithm(vpb::CompressionAlgorithm::Lz4),
             ),
         );
@@ -148,7 +144,7 @@ fn bench_table_builder(c: &mut Criterion) {
         let vs = Value::from(rand_value());
 
         let opt = RefCounter::new(
-            TableOptions::default_with_pool(AllocatorPool::new(1))
+            Options::default_with_pool(AllocatorPool::new(1))
                 .set_compression(vpb::Compression::zstd(1)),
         );
 
@@ -174,7 +170,7 @@ fn bench_table_builder(c: &mut Criterion) {
         let vs = Value::from(rand_value());
 
         let opt = RefCounter::new(
-            TableOptions::default_with_pool(AllocatorPool::new(1))
+            Options::default_with_pool(AllocatorPool::new(1))
                 .set_compression(vpb::Compression::zstd(3)),
         );
 
@@ -200,7 +196,7 @@ fn bench_table_builder(c: &mut Criterion) {
         let vs = Value::from(rand_value());
 
         let opt = RefCounter::new(
-            TableOptions::default_with_pool(AllocatorPool::new(1))
+            Options::default_with_pool(AllocatorPool::new(1))
                 .set_compression(vpb::Compression::zstd(15)),
         );
 
@@ -230,7 +226,7 @@ fn bench_table_builder(c: &mut Criterion) {
         rng.fill_bytes(key.as_mut_slice());
 
         let opt = RefCounter::new(
-            TableOptions::default_with_pool(AllocatorPool::new(1))
+            Options::default_with_pool(AllocatorPool::new(1))
                 .set_encryption(vpb::Encryption::aes(key)),
         );
 
@@ -249,7 +245,7 @@ fn bench_table(c: &mut Criterion) {
         let n = 5 * (1e6 as usize);
         let tbl = get_table_for_bench(n);
         b.iter(|| {
-            let mut it = tbl.iter(0);
+            let mut it = tbl.iter(Flag::NONE);
             it.seek_to_first();
             while it.valid() {
                 it.next();
@@ -261,9 +257,9 @@ fn bench_table(c: &mut Criterion) {
         let n = 5 * (1e6 as usize);
         let tbl = get_table_for_bench(n);
         b.iter(|| {
-            let mut it = tbl.iter(0);
+            let mut it = tbl.iter(Flag::NONE);
             let mut builder = Builder::new(RefCounter::new(
-                TableOptions::default_with_pool(AllocatorPool::new(1)).set_compression(
+                Options::default_with_pool(AllocatorPool::new(1)).set_compression(
                     vpb::Compression {
                         algo: vpb::CompressionAlgorithm::None,
                         level: 0,
@@ -288,7 +284,7 @@ fn bench_table(c: &mut Criterion) {
     c.bench_function("bench random read", |b| {
         let n = 5 * (1e6 as usize);
         let tbl = get_table_for_bench(n);
-        let mut it = tbl.iter(0);
+        let mut it = tbl.iter(Flag::NONE);
         b.iter_batched(
             || {
                 let i: usize = rng.gen_range(0..n);

@@ -1,5 +1,5 @@
 use super::*;
-use crate::TableOptions;
+use crate::Options;
 use rand::{thread_rng, Rng};
 use std::sync::Arc;
 use std::thread::spawn;
@@ -10,10 +10,8 @@ fn key(prefix: &str, i: isize) -> String {
     format!("{}{:04}", prefix, i)
 }
 
-pub(crate) fn get_test_table_options() -> TableOptions {
-    use crate::MAX_ALLOCATOR_INITIAL_SIZE;
-
-    TableOptions::default_with_pool(AllocatorPool::new(
+pub(crate) fn get_test_table_options() -> Options {
+    Options::default_with_pool(AllocatorPool::new(
         ((2 << 20) * 2).min(MAX_ALLOCATOR_INITIAL_SIZE),
     ))
 }
@@ -36,7 +34,7 @@ impl Ord for KV {
     }
 }
 
-fn build_test_table(prefix: &str, n: usize, mut opts: TableOptions) -> Result<Table> {
+fn build_test_table(prefix: &str, n: usize, mut opts: Options) -> Result<Table> {
     if opts.block_size().eq(&0) {
         opts = opts.set_block_size(4 * 1024);
     }
@@ -54,7 +52,7 @@ fn build_test_table(prefix: &str, n: usize, mut opts: TableOptions) -> Result<Ta
     build_table(key_values, opts)
 }
 
-fn build_table(mut key_values: Vec<KV>, opts: TableOptions) -> Result<Table> {
+fn build_table(mut key_values: Vec<KV>, opts: Options) -> Result<Table> {
     let mut b = Builder::new(RefCounter::new(opts)).unwrap();
     let mut rng = thread_rng();
     let mut filename = std::env::temp_dir();
@@ -101,7 +99,7 @@ fn test_table_big_value() {
 
     let tbl = Table::create_table(filename, builder).unwrap();
 
-    let mut iter = tbl.iter(0);
+    let mut iter = tbl.iter(Flag::NONE);
     iter.next();
     let mut cnt = 0;
     while iter.valid() {
@@ -179,7 +177,7 @@ fn test_table_iterator() {
     fn runner(n: usize) {
         let opts = get_test_table_options();
         let table = build_test_table("key", n, opts).unwrap();
-        let mut iter = table.iter(0);
+        let mut iter = table.iter(Flag::NONE);
         let mut cnt = 0;
         iter.next();
         for _ in 0..iter.count() {
@@ -200,7 +198,7 @@ fn test_seek_to_first() {
     fn runner(n: usize) {
         let opts = get_test_table_options();
         let table = build_test_table("key", n, opts).unwrap();
-        let mut iter = table.iter(0);
+        let mut iter = table.iter(Flag::NONE);
         iter.seek_to_first();
         assert!(iter.valid());
         let v = iter.val().unwrap();
@@ -218,7 +216,7 @@ fn test_seek_to_last() {
     fn runner(n: usize) {
         let opts = get_test_table_options();
         let table = build_test_table("key", n, opts).unwrap();
-        let mut iter = table.iter(0);
+        let mut iter = table.iter(Flag::NONE);
         iter.seek_to_last();
         assert!(iter.valid());
         let v = iter.val().unwrap();
@@ -246,7 +244,7 @@ struct TestData {
 fn test_seek_in() {
     let opts = get_test_table_options();
     let table = build_test_table("k", 10_000, opts).unwrap();
-    let mut iter = table.iter(0);
+    let mut iter = table.iter(Flag::NONE);
 
     let data = vec![
         TestData {
@@ -303,7 +301,7 @@ fn test_seek_in() {
 fn test_seek_for_prev() {
     let opts = get_test_table_options();
     let table = build_test_table("k", 10_000, opts).unwrap();
-    let mut iter = table.iter(0);
+    let mut iter = table.iter(Flag::NONE);
     let data = vec![
         TestData {
             input: b"abc".to_vec(),
@@ -361,7 +359,7 @@ fn test_iterate_from_start() {
     fn runner(n: usize) {
         let opts = get_test_table_options();
         let table = build_test_table("key", n, opts).unwrap();
-        let mut iter = table.iter(0);
+        let mut iter = table.iter(Flag::NONE);
         iter.reset();
         iter.seek_to_first();
         // No need to do a Next.
@@ -395,7 +393,7 @@ fn test_iterate_from_end() {
     fn runner(n: usize) {
         let opts = get_test_table_options();
         let table = build_test_table("key", n, opts).unwrap();
-        let mut iter = table.iter(0);
+        let mut iter = table.iter(Flag::NONE);
         iter.reset();
         iter.seek(Key::from("zzzzzz").with_timestamp(0).as_slice()); // Seek to end, an invalid element.
         assert!(!iter.valid());
@@ -419,7 +417,7 @@ fn test_iterate_from_end() {
 fn test_table() {
     let opts = get_test_table_options();
     let table = build_test_table("key", 10_000, opts).unwrap();
-    let mut iter = table.iter(0);
+    let mut iter = table.iter(Flag::NONE);
     let mut kid = 1010;
     let seek = Key::from(key("key", kid)).with_timestamp(0);
     iter.seek(seek.as_slice());
@@ -447,7 +445,7 @@ fn test_iterate_back_and_forth() {
     let table = build_test_table("key", 10_000, opts).unwrap();
 
     let seek = Key::from(key("key", 1010)).with_timestamp(0);
-    let mut iter = table.iter(0);
+    let mut iter = table.iter(Flag::NONE);
     iter.seek(seek.as_slice());
     assert!(iter.valid());
 
@@ -487,7 +485,7 @@ fn test_concat_iterator_one_table() {
     let opts = get_test_table_options();
     let table1 = build_test_table("k", n, opts).unwrap();
 
-    let mut t = ConcatTableIterator::new(vec![table1], 0);
+    let mut t = ConcatTableIterator::new(vec![table1], Flag::NONE);
     t.rewind();
     assert!(t.valid());
     let k = t.key().unwrap();
@@ -502,7 +500,7 @@ fn test_uni_iterator() {
     let n = 10_000;
     let opts = get_test_table_options();
     let table = build_test_table("keya", n, opts).unwrap();
-    let mut iter = table.iter(0);
+    let mut iter = table.iter(Flag::NONE);
     let mut cnt = 0;
     iter.next();
     for _ in 0..iter.count() {
@@ -522,7 +520,7 @@ fn test_uni_iterator_reverse() {
     let n = 10_000;
     let opts = get_test_table_options();
     let table = build_test_table("keya", n, opts).unwrap();
-    let mut iter = table.iter(REVERSED);
+    let mut iter = table.iter(Flag::REVERSED);
     let mut cnt = 0;
     iter.next();
     for _ in 0..iter.count() {
@@ -546,7 +544,7 @@ fn test_concat_iterator() {
     let table3 = build_test_table("keyc", n, opts).unwrap();
 
     {
-        let mut it = ConcatTableIterator::new(vec![table1, table2, table3], 0);
+        let mut it = ConcatTableIterator::new(vec![table1, table2, table3], Flag::NONE);
         let mut cnt = 0;
         it.rewind();
         while it.valid() {
@@ -591,7 +589,7 @@ fn test_concat_iterator_reversed() {
     let table3 = build_test_table("keyc", n, opts).unwrap();
 
     {
-        let mut it = ConcatTableIterator::new(vec![table1, table2, table3], REVERSED);
+        let mut it = ConcatTableIterator::new(vec![table1, table2, table3], Flag::REVERSED);
         let mut cnt = 0;
         it.rewind();
         while it.valid() {
@@ -687,8 +685,8 @@ fn test_merging_iterator() {
         ("k4", "a4"),
         ("k5", "a5"),
     ];
-    let it1 = tbl1.iter(0);
-    let it2 = ConcatTableIterator::new(vec![tbl2], 0);
+    let it1 = tbl1.iter(Flag::NONE);
+    let it2 = ConcatTableIterator::new(vec![tbl2], Flag::NONE);
     let mut it = MergeTableIterator::new(
         vec![
             Box::new(TableIterator::Uni(it1)),
@@ -770,8 +768,8 @@ fn test_merging_iterator_reversed() {
         ("k1", "a1"),
     ];
 
-    let it1 = tbl1.iter(REVERSED);
-    let it2 = ConcatTableIterator::new(vec![tbl2], REVERSED);
+    let it1 = tbl1.iter(Flag::REVERSED);
+    let it2 = ConcatTableIterator::new(vec![tbl2], Flag::REVERSED);
     let mut it = MergeTableIterator::new(
         vec![
             Box::new(TableIterator::Uni(it1)),
@@ -823,8 +821,8 @@ fn test_merging_iterator_take_one() {
     )
     .unwrap();
 
-    let it1 = ConcatTableIterator::new(vec![tbl1], 0);
-    let it2 = ConcatTableIterator::new(vec![tbl2], 0);
+    let it1 = ConcatTableIterator::new(vec![tbl1], Flag::NONE);
+    let it2 = ConcatTableIterator::new(vec![tbl2], Flag::NONE);
     let mut it = MergeTableIterator::new(
         vec![
             Box::new(TableIterator::Concat(it1)),
@@ -889,8 +887,8 @@ fn test_merging_iterator_take_two() {
     )
     .unwrap();
 
-    let it1 = ConcatTableIterator::new(vec![tbl1], 0);
-    let it2 = ConcatTableIterator::new(vec![tbl2], 0);
+    let it1 = ConcatTableIterator::new(vec![tbl1], Flag::NONE);
+    let it2 = ConcatTableIterator::new(vec![tbl2], Flag::NONE);
     let mut it = MergeTableIterator::new(
         vec![
             Box::new(TableIterator::Concat(it1)),

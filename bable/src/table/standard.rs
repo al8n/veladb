@@ -12,16 +12,20 @@ use vpb::{
     BlockOffset, Checksum, Compression, Marshaller, TableIndex,
 };
 
-use super::{iterator::UniTableIterator, Builder, CheapIndex, Ordering, FILE_SUFFIX, NUM_BLOCKS};
-use crate::{
-    bloom::MayContain,
-    error::*,
-    options::{ChecksumVerificationMode, TableOptions},
-    BableIterator, Block, RefCounter, NO_CACHE, REVERSED,
+use super::{
+    iterator::{BableIterator, Flag, UniTableIterator},
+    CheapIndex, ChecksumVerificationMode, Options, TableBuilder, FILE_SUFFIX,
 };
+use crate::{bloom::MayContain, error::*, Block, RefCounter};
+
+pub trait TableData {
+    fn size(&self) -> usize;
+
+    fn write(self, writer: &mut MmapFileMut) -> Result<usize>;
+}
 
 impl super::Table {
-    pub fn create_table<P: AsRef<Path>>(path: P, builder: Builder) -> Result<Self> {
+    pub fn create_table<P: AsRef<Path>>(path: P, builder: impl TableBuilder) -> Result<Self> {
         let opts = builder.options();
         let bd = builder.build()?;
         if let Some(bd) = bd {
@@ -54,7 +58,7 @@ impl super::Table {
     pub fn create_table_from_buffer<P: AsRef<Path>>(
         path: P,
         buf: Bytes,
-        opts: RefCounter<TableOptions>,
+        opts: RefCounter<Options>,
     ) -> Result<Self> {
         let mut mmap = fmmap::Options::new()
             .max_size(buf.len() as u64)
@@ -68,11 +72,7 @@ impl super::Table {
 
     /// open_in_memory_table is similar to OpenTable but it opens a new table from the provided data.
     /// open_in_memory_table is used for L0 tables.
-    pub fn open_in_memory_table(
-        data: Vec<u8>,
-        id: u64,
-        opts: RefCounter<TableOptions>,
-    ) -> Result<Self> {
+    pub fn open_in_memory_table(data: Vec<u8>, id: u64, opts: RefCounter<Options>) -> Result<Self> {
         let tbl_size = data.len();
         let mut this = RawTable {
             mmap: MmapFileMut::memory_from_vec("memory.sst", data),
@@ -106,7 +106,7 @@ impl super::Table {
     /// entry. Returns a table with one reference count on it (decrementing which may delete the file!
     /// -- consider t.Close() instead). The fd has to writeable because we call Truncate on it before
     /// deleting. Checksum for all blocks of table is verified based on value of chkMode.
-    pub fn open_table(mf: MmapFileMut, opts: RefCounter<TableOptions>) -> Result<Self> {
+    pub fn open_table(mf: MmapFileMut, opts: RefCounter<Options>) -> Result<Self> {
         // BlockSize is used to compute the approximate size of the decompressed
         // block. It should not be zero if the table is compressed.
         if opts.block_size() == 0 && !opts.compression().is_none() {
@@ -233,7 +233,7 @@ pub struct RawTable {
     index_len: usize,
     has_bloom_filter: bool,
     in_memory: bool,
-    opts: RefCounter<TableOptions>,
+    opts: RefCounter<Options>,
 }
 
 impl AsRef<RawTable> for RawTable {
@@ -341,7 +341,7 @@ impl RawTable {
     }
 
     #[inline]
-    pub(super) fn iter(&self, opt: usize) -> UniTableIterator<&RawTable> {
+    pub(super) fn iter(&self, opt: Flag) -> UniTableIterator<&RawTable> {
         UniTableIterator::new(self, opt)
     }
 
@@ -410,7 +410,7 @@ impl RawTable {
                 ChecksumVerificationMode::OnBlockRead
                     | ChecksumVerificationMode::OnTableAndBlockRead
             ) {
-                Block::verify_checksum(&blk, TableOptions::checksum(&self.opts))
+                Block::verify_checksum(&blk, Options::checksum(&self.opts))
                     .map_err(|e| {
                         #[cfg(feature = "tracing")]
                         {
@@ -482,7 +482,6 @@ impl RawTable {
         let bo = &index.offsets[idx];
         let offset = bo.offset as usize;
         let bo_len = bo.len as usize;
-        NUM_BLOCKS.fetch_add(1, Ordering::SeqCst);
         let data = self.read(offset, bo_len).map_err(|e| {
             #[cfg(feature = "tracing")]
             {
@@ -550,7 +549,7 @@ impl RawTable {
             self.opts.checksum_verification_mode(),
             ChecksumVerificationMode::OnBlockRead | ChecksumVerificationMode::OnTableAndBlockRead
         ) {
-            Block::verify_checksum(&blk, TableOptions::checksum(&self.opts))?;
+            Block::verify_checksum(&blk, Options::checksum(&self.opts))?;
         }
 
         Ok(RefCounter::new(blk))
@@ -560,7 +559,7 @@ impl RawTable {
         match self.init_index() {
             Ok(ko) => {
                 self.smallest = Key::from(ko.key);
-                let mut iter = self.iter(REVERSED | NO_CACHE);
+                let mut iter = self.iter(Flag::REVERSED | Flag::NO_CACHE);
                 iter.rewind();
                 if !iter.valid() {
                     #[cfg(feature = "tracing")]
@@ -654,7 +653,7 @@ impl RawTable {
         read_pos -= self.index_len;
         self.index_start = read_pos;
         let data = self.read_no_fail(read_pos, self.index_len);
-        if !data.verify_checksum(cks.sum, TableOptions::checksum(&self.opts)) {
+        if !data.verify_checksum(cks.sum, Options::checksum(&self.opts)) {
             return Err(Error::ChecksumMismatch);
         }
         let index = self.read_table_index()?;

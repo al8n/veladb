@@ -4,7 +4,7 @@ use crossbeam_utils::sync::WaitGroup;
 use fmmap::{MmapFileMut, MmapFileMutExt};
 
 impl Builder {
-    pub fn new(opts: RefCounter<TableOptions>) -> Result<Self> {
+    pub fn new(opts: RefCounter<Options>) -> Result<Self> {
         let sz = (2 * opts.table_size() as usize).min(MAX_ALLOCATOR_INITIAL_SIZE);
 
         let alloc = opts.allocator_pool().fetch(sz, "TableBuilder")?;
@@ -117,20 +117,29 @@ impl BlockProcessor {
     }
 }
 
-impl super::BuildData {
-    pub fn write(self, dst: &mut MmapFileMut) -> Result<usize> {
+impl super::TableData for super::BuildData {
+    #[inline]
+    fn size(&self) -> usize {
+        self.size as usize
+    }
+
+    fn write(self, dst: &mut MmapFileMut) -> Result<usize> {
         let mut written = 0;
         for blk in &self.block_list {
-            written += dst.write(&blk.data().as_slice()[..blk.end()], written);
+            written += MmapFileMutExt::write(dst, &blk.data().as_slice()[..blk.end()], written);
         }
 
-        written += dst.write(self.index.as_slice(), written);
+        written += MmapFileMutExt::write(dst, self.index.as_slice(), written);
 
-        written += dst.write((self.index.len() as u32).to_be_bytes().as_ref(), written);
+        written += MmapFileMutExt::write(
+            dst,
+            (self.index.len() as u32).to_be_bytes().as_ref(),
+            written,
+        );
 
-        written += dst.write(self.checksum.as_slice(), written);
+        written += MmapFileMutExt::write(dst, self.checksum.as_slice(), written);
 
-        written += dst.write(self.checksum_size.to_be_bytes().as_ref(), written);
+        written += MmapFileMutExt::write(dst, self.checksum_size.to_be_bytes().as_ref(), written);
 
         self.opts.allocator_pool().put(self.alloc);
         Ok(written)

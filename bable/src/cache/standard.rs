@@ -32,6 +32,7 @@ impl CacheCallback for NoopIndex {
 
 #[derive(Clone)]
 #[repr(transparent)]
+#[allow(clippy::type_complexity)]
 pub struct IndexCache(
     RefCounter<
         Cache<

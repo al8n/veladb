@@ -1,5 +1,5 @@
 use crate::HashMap;
-use mapcell::MapCell;
+use vela_utils::map_cell::MapCell;
 
 lazy_static::lazy_static! {
     pub static ref BLOOM_HITS: MapCell<&'static str, usize> = {

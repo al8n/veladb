@@ -20,9 +20,9 @@ pub enum ChecksumVerificationMode {
     OnTableAndBlockRead = 3,
 }
 
-/// TableOptions contains configurable options for Table/Builder.
+/// Options contains configurable options for Table/Builder.
 #[derive(Clone)]
-pub struct TableOptions {
+pub struct Options {
     // Options for Opening/Building Table.
     /// open table in read only mode
     ro: bool,
@@ -56,7 +56,7 @@ pub struct TableOptions {
     alloc_pool: RefCounter<AllocatorPool>,
 }
 
-impl TableOptions {
+impl Options {
     pub fn default_with_pool(pool: AllocatorPool) -> Self {
         Self {
             ro: false,

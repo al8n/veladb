@@ -4,6 +4,7 @@ members = [
   "core",
   "kvstructs",
   "mapcell",
+  "utils",
   "vpb",
   "wisc",
   "zallocator"

@@ -1,0 +1,26 @@
+[package]
+name = "vela-utils"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0/MIT"
+description = "A placeholder"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["std"]
+std = []
+singlethread = []
+ref_counter = ["triomphe"]
+ref_counter_std = ["triomphe/std"]
+map_cell = ["hashbrown", "atomic"]
+map_cell_std = ["atomic/std"]
+
+[dependencies]
+triomphe = { version = "0.1", default-features = false, optional = true }
+hashbrown = { version = "0.12", optional = true, default-features = false }
+atomic = { version = "0.5",  default-features = false, optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

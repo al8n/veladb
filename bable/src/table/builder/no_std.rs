@@ -2,7 +2,7 @@ use super::*;
 use vpb::kvstructs::bytes::BytesMut;
 
 impl Builder {
-    pub fn new(opts: RefCounter<TableOptions>) -> Result<Self> {
+    pub fn new(opts: RefCounter<Options>) -> Result<Self> {
         let sz = (2 * opts.table_size() as usize).min(MAX_ALLOCATOR_INITIAL_SIZE);
 
         let alloc = opts.allocator_pool().fetch(sz, "TableBuilder")?;

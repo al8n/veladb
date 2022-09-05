@@ -10,8 +10,13 @@ use vpb::kvstructs::{
 #[cfg(feature = "nightly")]
 mod nightly;
 
-pub const REVERSED: usize = 2;
-pub const NO_CACHE: usize = 4;
+bitflags::bitflags! {
+    pub struct Flag: u8 {
+        const NONE = 0;
+        const REVERSED = 2;
+        const NO_CACHE = 4;
+    }
+}
 
 pub trait BableIterator {
     fn next(&mut self);
@@ -403,11 +408,11 @@ pub struct UniTableIterator<I: AsRef<RawTable>> {
 
     // Internally, Iterator is bidirectional. However, we only expose the
     // unidirectional functionality for now.
-    opt: usize, // Valid options are REVERSED and NOCACHE.
+    opt: Flag, // Valid options are REVERSED and NOCACHE.
 }
 
 impl<I: AsRef<RawTable>> UniTableIterator<I> {
-    pub(crate) fn new(t: I, opt: usize) -> Self {
+    pub(crate) fn new(t: I, opt: Flag) -> Self {
         let num_entries = t.as_ref().num_entries();
         Self {
             table: t,
@@ -522,7 +527,7 @@ impl<I: AsRef<RawTable>> UniTableIterator<I> {
 
     #[inline(always)]
     fn use_cache(&self) -> bool {
-        (self.opt & NO_CACHE) == 0
+        (self.opt & Flag::NO_CACHE).bits == 0
     }
 
     /// seek_from_key brings us to a key that is >= input key.
@@ -681,7 +686,7 @@ impl<I: AsRef<RawTable>> BableIterator for UniTableIterator<I> {
     fn next(&mut self) {
         if self.bpos == -1 {
             self.rewind();
-        } else if self.opt & REVERSED == 0 {
+        } else if (self.opt & Flag::REVERSED).bits() == 0 {
             self.next_in();
         } else {
             self.prev();
@@ -689,7 +694,7 @@ impl<I: AsRef<RawTable>> BableIterator for UniTableIterator<I> {
     }
 
     fn rewind(&mut self) {
-        if self.opt & REVERSED == 0 {
+        if (self.opt & Flag::REVERSED).bits() == 0 {
             self.seek_to_first()
         } else {
             self.seek_to_last()
@@ -697,7 +702,7 @@ impl<I: AsRef<RawTable>> BableIterator for UniTableIterator<I> {
     }
 
     fn seek(&mut self, key: impl KeyExt) {
-        if self.opt & REVERSED == 0 {
+        if (self.opt & Flag::REVERSED).bits() == 0 {
             self.seek_from_key(key.as_bytes(), SeekFrom::Origin)
         } else {
             self.seek_to_key(key)
@@ -738,13 +743,13 @@ pub struct ConcatTableIterator {
     iters: Vec<UniTableIterator<RefCounter<RawTable>>>,
     tables: Vec<Table>,
     num_entries: usize,
-    opt: usize,
+    opt: Flag,
 }
 
 impl ConcatTableIterator {
-    pub fn new(tables: Vec<Table>, opt: usize) -> Self {
+    pub fn new(tables: Vec<Table>, opt: Flag) -> Self {
         let mut num_entries = 0;
-        let idx = if opt & REVERSED == 0 {
+        let idx = if (opt & Flag::REVERSED).bits() == 0 {
             0
         } else {
             tables.len() - 1
@@ -783,7 +788,7 @@ impl ConcatTableIterator {
             return;
         }
 
-        if self.opt & REVERSED == 0 {
+        if (self.opt & Flag::REVERSED).bits() == 0 {
             self.set_idx(0);
         } else {
             self.set_idx(self.iters.len() as isize - 1);
@@ -792,7 +797,7 @@ impl ConcatTableIterator {
 
     fn get_seek_position(&self, key: &[u8]) -> isize {
         let len = self.iters.len() as isize;
-        if self.opt & REVERSED == 0 {
+        if (self.opt & Flag::REVERSED).bits() == 0 {
             binary_search(len, |i| {
                 match self.tables[i as usize]
                     .biggest()
@@ -830,7 +835,7 @@ impl BableIterator for ConcatTableIterator {
 
         // In case there are empty tables.
         loop {
-            if self.opt & REVERSED == 0 {
+            if (self.opt & Flag::REVERSED).bits() == 0 {
                 self.set_idx(self.idx + 1);
             } else {
                 self.set_idx(self.idx - 1);

@@ -1,9 +1,7 @@
-use super::error::*;
+use super::*;
 use crate::{
     bloom::{bloom_bits_per_key, hash, Filter},
-    options::TableOptions,
     sync::{AtomicU32, Ordering},
-    RefCounter,
 };
 use alloc::vec::Vec;
 use core::{ops::Deref, ptr::NonNull};
@@ -14,7 +12,7 @@ use vpb::{
     kvstructs::{Key, KeyExt, Value, ValueExt},
     BlockOffset, Checksum, Compression, Encryption, EncryptionAlgorithm, Marshaller, TableIndex,
 };
-use zallocator::{pool::Allocator, Buffer};
+use zallocator::Buffer;
 
 #[cfg(feature = "std")]
 mod standard;
@@ -28,43 +26,14 @@ pub const MAX_ALLOCATOR_INITIAL_SIZE: usize = 256 << 20;
 /// handle cases when block size increases. This is an approximate number.
 const PADDING: usize = 256;
 
-pub const HEADER_SIZE: usize = core::mem::size_of::<Header>();
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(C)]
-pub(crate) struct Header {
-    /// Overlap with base key.
-    overlap: u16,
-    /// Length of the diff.
-    diff: u16,
-}
-
-impl Header {
-    #[inline]
-    pub fn encode(&self) -> [u8; HEADER_SIZE] {
-        let mut buf = [0; HEADER_SIZE];
-        buf[..2].copy_from_slice(&self.overlap.to_le_bytes());
-        buf[2..].copy_from_slice(&self.diff.to_le_bytes());
-        buf
-    }
-
-    #[inline]
-    pub fn decode(buf: &[u8]) -> Self {
-        Self {
-            overlap: u16::from_le_bytes(buf[..2].try_into().unwrap()),
-            diff: u16::from_le_bytes(buf[2..4].try_into().unwrap()),
-        }
-    }
-
-    #[inline]
-    pub fn overlap(&self) -> u16 {
-        self.overlap
-    }
-
-    #[inline]
-    pub fn diff(&self) -> u16 {
-        self.diff
-    }
+pub struct BuildData {
+    alloc: Allocator,
+    opts: RefCounter<Options>,
+    block_list: Vec<BBlock>,
+    index: Vec<u8>,
+    checksum: Vec<u8>,
+    checksum_size: u32,
+    size: u32,
 }
 
 /// BBlock represents a block that is being compressed/encrypted in the background.
@@ -201,6 +170,11 @@ impl BBlock {
 }
 
 /// Builder is used in building a table.
+///
+/// If you do not want to compress or encrypt data,
+/// Please use [`SimpleBuilder`], it is faster than `Builder`
+///
+/// [`SimpleBuilder`]: struct.SimpleBuilder.html
 pub struct Builder {
     /// Typically tens or hundreds of meg. This is for one single file.
     alloc: Allocator,
@@ -213,7 +187,7 @@ pub struct Builder {
 
     len_offsets: u32,
     key_hashes: Vec<u32>,
-    opts: RefCounter<super::options::TableOptions>,
+    opts: RefCounter<super::options::Options>,
     max_version: u64,
     on_disk_size: u32,
     stale_data_size: usize,
@@ -225,15 +199,15 @@ pub struct Builder {
     block_list: Vec<BBlock>,
 }
 
-impl Builder {
-    pub fn options(&self) -> RefCounter<TableOptions> {
+impl TableBuilder for Builder {
+    fn options(&self) -> RefCounter<Options> {
         self.opts.clone()
     }
 
     /// The same as `insert` function but it also increments the internal
     /// `stale_data_size` counter. This value will be used to prioritize this table for
     /// compaction.
-    pub fn insert_stale(&mut self, key: &Key, val: &Value, value_len: u32) {
+    fn insert_stale(&mut self, key: &Key, val: &Value, value_len: u32) {
         // Rough estimate based on how much space it will occupy in the SST.
         self.stale_data_size += key.len()
             + val.len()
@@ -244,35 +218,19 @@ impl Builder {
     }
 
     /// Inserts a key-value pair to the block.
-    pub fn insert(&mut self, key: &Key, val: &Value, value_len: u32) {
+    fn insert(&mut self, key: &Key, val: &Value, value_len: u32) {
         self.insert_in(key, val, value_len, false)
-    }
-
-    #[inline]
-    fn insert_in(&mut self, key: &Key, val: &Value, value_len: u32, is_stale: bool) {
-        if self.should_finish_block(key.len(), val.encoded_size()) {
-            if is_stale {
-                // This key will be added to tableIndex and it is stale.
-                self.stale_data_size += key.len()
-                    + 4 // len
-                    + 4; // offset
-            }
-
-            self.finish_block(true)
-        }
-
-        self.insert_helper(key, val, value_len)
     }
 
     /// Returns whether builder is empty.
     #[inline]
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.key_hashes.len() == 0
     }
 
     /// Returns the number of blocks in the builder.
     #[inline]
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.key_hashes.len()
     }
 
@@ -281,8 +239,7 @@ impl Builder {
     // not yet written.
     // TODO: Look into why there is a discrepancy. I suspect it is because of Write(empty, empty)
     // at the end. The diff can vary.
-    /// Returns true if we... roughly (?) reached capacity?
-    pub fn reached_capacity(&self) -> bool {
+    fn reached_capacity(&self) -> bool {
         // If encryption/compression is enabled then use the compresssed size.
         let mut sum_block_size = self.compressed_size.load(Ordering::SeqCst);
         if self.opts.compression().is_none() && self.opts.encryption().is_none() {
@@ -301,7 +258,7 @@ impl Builder {
         (estimated_size as u64) > self.opts.table_capacity()
     }
 
-    pub fn build(mut self) -> Result<Option<BuildData>> {
+    fn build(mut self) -> Result<Option<BuildData>> {
         self.finish_block(false);
         #[cfg(feature = "std")]
         {
@@ -359,7 +316,7 @@ impl Builder {
             // Build checksum for the index.
             let cks = index
                 .as_slice()
-                .checksum(TableOptions::checksum(&self.opts))
+                .checksum(Options::checksum(&self.opts))
                 .marshal();
             let cks_size = cks.len();
             let size = data_sz + (index.len() + cks_size + 4 + 4) as u32;
@@ -376,7 +333,7 @@ impl Builder {
         } else {
             let cks = data
                 .as_slice()
-                .checksum(TableOptions::checksum(&self.opts))
+                .checksum(Options::checksum(&self.opts))
                 .marshal();
 
             let cks_size = cks.len();
@@ -391,6 +348,26 @@ impl Builder {
                 size,
             }))
         }
+    }
+
+    type TableData = BuildData;
+}
+
+impl Builder {
+    #[inline]
+    fn insert_in(&mut self, key: &Key, val: &Value, value_len: u32, is_stale: bool) {
+        if self.should_finish_block(key.len(), val.encoded_size()) {
+            if is_stale {
+                // This key will be added to tableIndex and it is stale.
+                self.stale_data_size += key.len()
+                    + 4 // len
+                    + 4; // offset
+            }
+
+            self.finish_block(true)
+        }
+
+        self.insert_helper(key, val, value_len)
     }
 
     /// Structure of Block.
@@ -417,7 +394,7 @@ impl Builder {
 
         // Append the block checksum and its length.
         let checksum = (&self.cur_block.data().as_slice()[..cur_block_end])
-            .checksum(TableOptions::checksum(&self.opts))
+            .checksum(Options::checksum(&self.opts))
             .marshal();
         self.append(&checksum);
         self.append(&(checksum.len() as u32).to_be_bytes());
@@ -643,7 +620,7 @@ impl Builder {
     }
 
     #[inline(always)]
-    fn encrypt_data(alloc: &Allocator, data: Buffer, encryption: &Encryption) -> Buffer {
+    fn encrypt_data(_alloc: &Allocator, data: Buffer, encryption: &Encryption) -> Buffer {
         let algo = encryption.algorithm();
         match algo {
             #[cfg(any(feature = "aes", feature = "aes-std"))]
@@ -651,7 +628,7 @@ impl Builder {
                 let iv = vpb::encrypt::random_iv();
                 let key = encryption.secret();
 
-                let buffer = alloc.allocate_unchecked((data.capacity() + iv.len()) as u64);
+                let buffer = _alloc.allocate_unchecked((data.capacity() + iv.len()) as u64);
                 let slice = buffer.as_mut_slice();
                 data.encrypt_to(&mut slice[..data.capacity()], key, &iv, algo)
                     .map_err(|e| {
@@ -668,35 +645,4 @@ impl Builder {
             _ => data,
         }
     }
-}
-
-pub struct BuildData {
-    alloc: Allocator,
-    opts: RefCounter<TableOptions>,
-    block_list: Vec<BBlock>,
-    index: Vec<u8>,
-    checksum: Vec<u8>,
-    checksum_size: u32,
-    size: u32,
-}
-
-impl BuildData {
-    #[inline]
-    pub fn size(&self) -> u32 {
-        self.size
-    }
-}
-
-#[inline(always)]
-fn u32_slice_to_bytes(bytes: &[u32]) -> &[u8] {
-    const DUMMY: &[u8] = &[];
-    if bytes.is_empty() {
-        return DUMMY;
-    }
-
-    let len = bytes.len();
-    let ptr = bytes.as_ptr();
-    // Safety:
-    // - This function is not exposed to the public.
-    unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), len * 4) }
 }
