@@ -1,9 +1,12 @@
 [package]
 name = "vpb"
-version = "0.0.3"
+version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0/MIT"
 description = "key-value proto buffer for veladb"
+repository = "https://github.com/al8n/veladb/tree/main/vpb"
+documentation = "https://docs.rs/vpb"
+categories = ["data-structures", "no-std"]
 
 [features]
 default = ["std"]

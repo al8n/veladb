@@ -4,4 +4,5 @@ Currently, this project is in very early stage.
 
 Crates in beta status:
 - `kvstructs`
+- `vpb`
 - `zallocator`
