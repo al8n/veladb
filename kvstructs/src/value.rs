@@ -292,6 +292,14 @@ pub trait ValueExt {
         buf.put_slice(self.parse_value());
     }
 
+    ///
+    fn encode_to_bytes(&self, buf: &mut BytesMut) {
+        buf.put_u8(self.get_meta());
+        buf.put_u8(self.get_user_meta());
+        buf.put_slice(binary_uvarint_allocate(self.get_expires_at()).as_slice());
+        buf.put_slice(self.parse_value());
+    }
+
     /// Encode to [`EncodedValue`].
     ///
     /// This function may be optimized by the underlying type to avoid actual copies.

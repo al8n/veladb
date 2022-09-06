@@ -1,4 +1,6 @@
-use bable::{BableIterator, Builder, Flag, Options, RefCounter, Table, TableBuilder};
+use bable::{
+    BableIterator, Builder, Flag, Options, RefCounter, SimpleBuilder, Table, TableBuilder,
+};
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use rand::{thread_rng, Rng, RngCore};
 use scopeguard::defer;
@@ -49,6 +51,34 @@ fn get_table_for_bench(count: usize) -> Table {
 }
 
 fn bench_table_builder(c: &mut Criterion) {
+    c.bench_function("bench table simple builder no compression", |b| {
+        const KEY_COUNT: usize = 1300000; // about 64MB
+
+        let mut key_list = vec![];
+        for i in 0..KEY_COUNT {
+            let k = Key::from(format!("{:032}", i));
+            key_list.push(k);
+        }
+
+        let vs = Value::from(rand_value());
+
+        let opt = RefCounter::new(
+            Options::default_with_pool(AllocatorPool::new(1)).set_compression(vpb::Compression {
+                algo: vpb::CompressionAlgorithm::None,
+                level: 0,
+            }),
+        );
+
+        b.iter(|| {
+            let mut builder = SimpleBuilder::new(opt.clone()).unwrap();
+            key_list.iter().take(KEY_COUNT).for_each(|k| {
+                builder.insert(k, &vs, 0);
+            });
+
+            builder.build().unwrap();
+        });
+    });
+
     c.bench_function("bench table builder no compression", |b| {
         const KEY_COUNT: usize = 1300000; // about 64MB
 
@@ -303,7 +333,8 @@ fn bench_table(c: &mut Criterion) {
 criterion_group! {
     name = benches_table;
     config = Criterion::default().sample_size(10);
-    targets = bench_table_builder, bench_table
+    targets = bench_table_builder
+    // bench_table
 }
 
 criterion_main!(benches_table);

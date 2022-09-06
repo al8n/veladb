@@ -200,6 +200,15 @@ pub struct Builder {
 }
 
 impl TableBuilder for Builder {
+    type TableData = BuildData;
+
+    fn new(opts: RefCounter<Options>) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Builder::new_in(opts)
+    }
+
     fn options(&self) -> RefCounter<Options> {
         self.opts.clone()
     }
@@ -277,8 +286,8 @@ impl TableBuilder for Builder {
         let mut tbi = TableIndex::new();
         if self.opts.bloom_ratio() > 0.0 {
             let bits = bloom_bits_per_key(key_hashes_len, self.opts.bloom_ratio());
-            tbi.bloom_filter = Filter::new(self.key_hashes.as_slice(), bits).into_bytes()
-        };
+            tbi.bloom_filter = Filter::new(self.key_hashes.as_slice(), bits).into_bytes();
+        }
 
         let mut num_entries = 0;
         let mut data_sz = 0;
@@ -349,8 +358,6 @@ impl TableBuilder for Builder {
             }))
         }
     }
-
-    type TableData = BuildData;
 }
 
 impl Builder {
@@ -485,7 +492,7 @@ impl Builder {
 
     /// Returns a suffix of newKey that is different from `self.base_key`.
     #[inline]
-    fn key_diff<'a>(&'a self, new_key: &'a [u8]) -> &'a [u8] {
+    fn key_diff<'a>(&self, new_key: &'a [u8]) -> &'a [u8] {
         let base_key = self.cur_block.base_key();
         let (new_key_len, base_key_len) = (new_key.len(), base_key.len());
         let mut idx = 0;

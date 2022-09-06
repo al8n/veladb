@@ -38,7 +38,7 @@ mod sync {
     pub use triomphe::Arc;
 }
 
-use vela_utils::ref_counter::RefCounter;
+pub use vela_utils::ref_counter::RefCounter;
 
 fn binary_search<F: FnMut(isize) -> bool>(target: isize, mut op: F) -> isize {
     // Define f(-1) == false and f(n) == true.

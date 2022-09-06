@@ -1,12 +1,15 @@
-use lazy_static::__Deref;
+use core::ops::Deref;
+
 use vpb::{
     checksum::Checksumer,
-    kvstructs::{KeyExt, ValueExt},
+    kvstructs::{
+        bytes::{BufMut, BytesMut},
+        KeyExt, ValueExt,
+    },
     BlockOffset, Checksum, TableIndex,
 };
-use zallocator::Buffer;
 
-use crate::bloom::hash;
+use crate::bloom::{bloom_bits_per_key, hash, Filter};
 
 use super::*;
 
@@ -21,9 +24,7 @@ mod no_std;
 pub use no_std::*;
 
 pub struct SimpleBuildData {
-    alloc: Allocator,
-    opts: RefCounter<Options>,
-    buffer: Buffer,
+    data: Bytes,
 }
 
 /// `SimpleBuilder` is a faster builder for building table.
@@ -32,11 +33,9 @@ pub struct SimpleBuildData {
 ///
 /// [`Builder`]: struct.Builder.html
 pub struct SimpleBuilder {
-    allocator: Allocator,
-    buf: Buffer,
+    buf: BytesMut,
     base_key: Key,
     last_block_offset: u32,
-    current_block_offset: u32,
     key_hashes: Vec<u32>,
     entry_offsets: Vec<u32>,
     table_index: TableIndex,
@@ -48,6 +47,13 @@ pub struct SimpleBuilder {
 
 impl super::TableBuilder for SimpleBuilder {
     type TableData = SimpleBuildData;
+
+    fn new(opts: RefCounter<Options>) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        SimpleBuilder::new_in(opts)
+    }
 
     fn options(&self) -> RefCounter<Options> {
         self.opts.clone()
@@ -81,7 +87,7 @@ impl super::TableBuilder for SimpleBuilder {
 
     #[inline]
     fn reached_capacity(&self) -> bool {
-        let block_size = self.current_block_offset
+        let block_size = self.buf.len() as u32
             + (self.entry_offsets.len() * 4) as u32
             + 4 // count of all entry offsets
             + Checksum::ENCODED_SIZE as u32; // checksum;
@@ -94,8 +100,34 @@ impl super::TableBuilder for SimpleBuilder {
     }
 
     #[inline]
-    fn build(self) -> Result<Option<Self::TableData>> {
-        todo!()
+    fn build(mut self) -> Result<Option<Self::TableData>> {
+        self.finish_block();
+        if self.buf.is_empty() {
+            return Ok(None);
+        }
+
+        if self.opts.bloom_ratio() > 0.0 {
+            let bits = bloom_bits_per_key(self.key_hashes.len(), self.opts.bloom_ratio());
+            self.table_index.bloom_filter =
+                Filter::new(self.key_hashes.as_slice(), bits).into_bytes();
+        }
+        // append index to buffer
+        let index = self.table_index.marshal();
+        let index_len = index.len();
+        assert!(index_len < u32::MAX as usize);
+        self.buf.put_slice(&index);
+        self.buf.put_u32(index_len as u32);
+        let cks = index
+            .as_slice()
+            .checksum(Options::checksum(&self.opts))
+            .marshal();
+        let cks_len = cks.len() as u32;
+        self.buf.put_slice(&cks);
+        self.buf.put_u32(cks_len as u32);
+
+        Ok(Some(SimpleBuildData {
+            data: self.buf.freeze(),
+        }))
     }
 }
 
@@ -112,8 +144,8 @@ impl SimpleBuilder {
 
             self.finish_block();
             self.base_key.clear();
-            assert!(self.current_block_offset < u32::MAX);
-            self.last_block_offset = self.current_block_offset;
+            assert!(self.buf.len() < u32::MAX as usize);
+            self.last_block_offset = self.buf.len() as u32;
             self.entry_offsets.clear();
         }
 
@@ -136,17 +168,15 @@ impl SimpleBuilder {
             return;
         }
 
-        let cur_block_end = self.current_block_offset as usize;
-
-        self.append(u32_slice_to_bytes(&self.entry_offsets));
-        self.append(&(entries_len as u32).to_be_bytes());
+        self.buf.put_slice(u32_slice_to_bytes(&self.entry_offsets));
+        self.buf.put_u32(entries_len as u32);
 
         // Append the block checksum and its length.
-        let checksum = (&self.buf.as_slice()[self.last_block_offset as usize..cur_block_end])
+        let checksum = (&self.buf[self.last_block_offset as usize..])
             .checksum(Options::checksum(&self.opts))
             .marshal();
-        self.append(&checksum);
-        self.append(&(checksum.len() as u32).to_be_bytes());
+        self.buf.put_slice(&checksum);
+        self.buf.put_u32(checksum.len() as u32);
 
         // Add length of baseKey (rounded to next multiple of 4 because of alignment).
         // Add another 40 Bytes, these additional 40 bytes consists of
@@ -159,8 +189,8 @@ impl SimpleBuilder {
 
         self.table_index.offsets.push(BlockOffset {
             key: self.base_key.deref().clone(),
-            offset: self.current_block_offset,
-            len: self.current_block_offset - self.last_block_offset,
+            offset: self.last_block_offset,
+            len: self.buf.len() as u32 - self.last_block_offset,
         });
     }
 
@@ -179,24 +209,21 @@ impl SimpleBuilder {
             + 4 // size of entires list
             + (Checksum::ENCODED_SIZE as u32);
 
-        let estimated_size = (self.current_block_offset - self.last_block_offset)
+        let estimated_size = (self.buf.len() as u32 - self.last_block_offset)
             + 6 // header size for entry
             + key_size as u32
             + val_encoded_size
             + entires_offset_size;
 
         // Integer overflow check for table size.
-        assert!(
-            ((self.current_block_offset - self.last_block_offset) as u64) + (estimated_size as u64)
-                < u32::MAX as u64
-        );
+        assert!((self.buf.len() as u64) + (estimated_size as u64) < u32::MAX as u64);
 
         estimated_size > self.opts.block_size() as u32
     }
 
     /// Returns a suffix of newKey that is different from `self.base_key`.
     #[inline]
-    fn key_diff(&self, new_key: &Key) -> Key {
+    fn key_diff<'a>(&self, new_key: &'a Key) -> &'a [u8] {
         let (new_key_len, base_key_len) = (new_key.len(), self.base_key.len());
         let mut idx = 0;
         while idx < new_key_len && idx < base_key_len {
@@ -205,7 +232,7 @@ impl SimpleBuilder {
             }
             idx += 1;
         }
-        new_key.slice(idx..).into()
+        &new_key[idx..]
     }
 
     fn insert_helper(&mut self, key: &Key, val: &Value, vplen: u32) {
@@ -236,47 +263,18 @@ impl SimpleBuilder {
 
         // store current entry's offset
         // self.e(self.cur_block.end() as u32);
-        let entry_offset = self.current_block_offset - self.last_block_offset;
-        self.entry_offsets.push(entry_offset);
+        self.entry_offsets
+            .push(self.buf.len() as u32 - self.last_block_offset);
 
         // Layout: header, diff_key, value.
-        self.append(&header.encode());
-        self.append(diff_key);
+        header.encode_to_bytes(&mut self.buf);
+        self.buf.put_slice(diff_key);
 
         let val_encoded_size = val.encoded_size();
-        let dst = self.allocate(val_encoded_size as usize);
-        val.encode(dst.as_mut_slice());
+        val.encode_to_bytes(&mut self.buf);
+        let sst_size = val_encoded_size + diff_key_len as u32 + 4;
 
-        let sst_size = val_encoded_size + diff_key.len() as u32 + 4;
         self.table_index.estimated_size += sst_size as u32 + vplen;
-    }
-
-    fn allocate(&mut self, need: usize) -> Buffer {
-        let prev_end = self.current_block_offset as usize;
-        if self.buf.as_ref()[prev_end..].len() < need {
-            // We need to reallocate. 1GB is the max size that the allocator can allocate.
-            // While reallocating, if doubling exceeds that limit, then put the upper bound on it.
-            let sz = (2 * (self.current_block_offset - self.last_block_offset) as u64)
-                .min(zallocator::Zallocator::MAX_ALLOC)
-                .max((prev_end + need) as u64);
-            let tmp = self.allocator.allocate_unchecked(sz);
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    self.buf.as_ref()[..prev_end].as_ptr(),
-                    tmp.as_mut_ptr(),
-                    prev_end,
-                );
-            }
-            self.buf = tmp;
-        }
-
-        self.current_block_offset += need as u32;
-        self.buf.slice(prev_end..prev_end + need)
-    }
-
-    /// Appends to `cur_block.data`
-    fn append(&mut self, data: &[u8]) {
-        let dst = self.allocate(data.len());
-        Buffer::copy_from_slice(&dst, data)
+        self.table_index.max_version = self.table_index.max_version.max(key.parse_timestamp());
     }
 }

@@ -5,7 +5,10 @@ use self::iterator::UniTableIterator;
 use super::error::*;
 use vpb::{
     checksum::calculate_checksum,
-    kvstructs::{bytes::Bytes, Key, Value},
+    kvstructs::{
+        bytes::{BufMut, Bytes, BytesMut},
+        Key, Value,
+    },
     ChecksumAlgorithm, Compression, Marshaller,
 };
 
@@ -40,6 +43,10 @@ const INT_SIZE: usize = core::mem::size_of::<usize>();
 
 pub trait TableBuilder {
     type TableData: TableData;
+
+    fn new(opts: RefCounter<Options>) -> Result<Self>
+    where
+        Self: Sized;
 
     fn options(&self) -> RefCounter<Options>;
 
@@ -82,6 +89,12 @@ impl Header {
         buf[..2].copy_from_slice(&self.overlap.to_le_bytes());
         buf[2..].copy_from_slice(&self.diff.to_le_bytes());
         buf
+    }
+
+    #[inline]
+    pub fn encode_to_bytes(&self, buf: &mut BytesMut) {
+        buf.put_u16_le(self.overlap);
+        buf.put_u16_le(self.diff);
     }
 
     #[inline]
