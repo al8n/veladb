@@ -133,11 +133,6 @@ impl BlockIter {
         self.err.is_none()
     }
 
-    #[inline(always)]
-    pub fn error(&self) -> Option<&IterError> {
-        self.err.as_ref()
-    }
-
     /// seek brings us to the first block element that is >= input key.
     pub(crate) fn seek(&mut self, key: &[u8], whence: SeekFrom) {
         self.err = None;

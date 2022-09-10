@@ -10,7 +10,7 @@ use vpb::{
     compression::Compressor,
     encrypt::{random_iv, Encryptor},
     kvstructs::{Key, KeyExt, Value, ValueExt},
-    BlockOffset, Checksum, Compression, Encryption, EncryptionAlgorithm, Marshaller, TableIndex,
+    BlockOffset, Checksum, Compression, Encryption, Marshaller, TableIndex,
 };
 use zallocator::Buffer;
 
@@ -377,15 +377,18 @@ impl Builder {
         self.insert_helper(key, val, value_len)
     }
 
-    /// Structure of Block.
-    ///  +-------------------+---------------------+--------------------+--------------+------------------+
+    /// # Structure of Block.
+    ///
+    /// ```text
+    /// +-------------------+---------------------+--------------------+--------------+------------------+
     /// | Entry1            | Entry2              | Entry3             | Entry4       | Entry5           |
-    ///  +-------------------+---------------------+--------------------+--------------+------------------+
+    /// +-------------------+---------------------+--------------------+--------------+------------------+
     /// | Entry6            | ...                 | ...                | ...          | EntryN           |
     /// +-------------------+---------------------+--------------------+--------------+------------------+
     /// | Block Meta(contains list of offsets used| Block Meta Size    | Block        | Checksum Size    |
     /// | to perform binary search in the block)  | (4 Bytes)          | Checksum     | (4 Bytes)        |
-    ///  +-----------------------------------------+--------------------+--------------+------------------+
+    /// +-----------------------------------------+--------------------+--------------+------------------+
+    /// ```
     /// In case the data is encrypted, the "IV" is added to the end of the block.
     fn finish_block(&mut self, start_new: bool) {
         let entries = self.cur_block.entry_offsets();
@@ -631,7 +634,7 @@ impl Builder {
         let algo = encryption.algorithm();
         match algo {
             #[cfg(any(feature = "aes", feature = "aes-std"))]
-            EncryptionAlgorithm::Aes => {
+            vpb::EncryptionAlgorithm::Aes => {
                 let iv = vpb::encrypt::random_iv();
                 let key = encryption.secret();
 

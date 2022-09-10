@@ -192,6 +192,7 @@ impl SimpleBuilder {
             offset: self.last_block_offset,
             len: self.buf.len() as u32 - self.last_block_offset,
         });
+        self.table_index.key_count += entries_len as u32;
     }
 
     fn should_finish_block(&self, key_size: usize, val_encoded_size: u32) -> bool {
@@ -267,11 +268,11 @@ impl SimpleBuilder {
             .push(self.buf.len() as u32 - self.last_block_offset);
 
         // Layout: header, diff_key, value.
-        header.encode_to_bytes(&mut self.buf);
+        header.encode_to_buf(&mut self.buf);
         self.buf.put_slice(diff_key);
 
         let val_encoded_size = val.encoded_size();
-        val.encode_to_bytes(&mut self.buf);
+        val.encode_to_buf(&mut self.buf);
         let sst_size = val_encoded_size + diff_key_len as u32 + 4;
 
         self.table_index.estimated_size += sst_size as u32 + vplen;

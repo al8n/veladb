@@ -24,14 +24,14 @@ pub fn rand_value() -> Vec<u8> {
         .collect::<Vec<_>>()
 }
 
-fn get_table_for_bench(count: usize) -> Table {
+fn get_table_for_bench<B: TableBuilder>(count: usize) -> Table {
     let opts =
         Options::default_with_pool(AllocatorPool::new(1)).set_compression(vpb::Compression {
             algo: vpb::CompressionAlgorithm::None,
             level: 0,
         });
 
-    let mut builder = Builder::new(RefCounter::new(opts)).unwrap();
+    let mut builder = B::new(RefCounter::new(opts)).unwrap();
     let mut rng = thread_rng();
 
     let mut filename = std::env::temp_dir();
@@ -51,7 +51,7 @@ fn get_table_for_bench(count: usize) -> Table {
 }
 
 fn bench_table_builder(c: &mut Criterion) {
-    c.bench_function("bench table simple builder no compression", |b| {
+    c.bench_function("bench table simple builder", |b| {
         const KEY_COUNT: usize = 1300000; // about 64MB
 
         let mut key_list = vec![];
@@ -273,7 +273,7 @@ fn bench_table_builder(c: &mut Criterion) {
 fn bench_table(c: &mut Criterion) {
     c.bench_function("bench table read", |b| {
         let n = 5 * (1e6 as usize);
-        let tbl = get_table_for_bench(n);
+        let tbl = get_table_for_bench::<Builder>(n);
         b.iter(|| {
             let mut it = tbl.iter(Flag::NONE);
             it.seek_to_first();
@@ -283,9 +283,36 @@ fn bench_table(c: &mut Criterion) {
         });
     });
 
+    c.bench_function("bench table read and build (simple builder)", |b| {
+        let n = 5 * (1e6 as usize);
+        let tbl = get_table_for_bench::<SimpleBuilder>(n);
+        b.iter(|| {
+            let mut it = tbl.iter(Flag::NONE);
+            let mut builder = SimpleBuilder::new(RefCounter::new(
+                Options::default_with_pool(AllocatorPool::new(1)).set_compression(
+                    vpb::Compression {
+                        algo: vpb::CompressionAlgorithm::None,
+                        level: 0,
+                    },
+                ),
+            ))
+            .unwrap();
+            it.seek_to_first();
+            while it.valid() {
+                builder.insert(
+                    &it.key().unwrap().to_key(),
+                    &it.val().unwrap().to_value(),
+                    0,
+                );
+                it.next();
+            }
+            builder.build().unwrap();
+        });
+    });
+
     c.bench_function("bench table read and build", |b| {
         let n = 5 * (1e6 as usize);
-        let tbl = get_table_for_bench(n);
+        let tbl = get_table_for_bench::<Builder>(n);
         b.iter(|| {
             let mut it = tbl.iter(Flag::NONE);
             let mut builder = Builder::new(RefCounter::new(
@@ -313,7 +340,7 @@ fn bench_table(c: &mut Criterion) {
     let mut rng = thread_rng();
     c.bench_function("bench random read", |b| {
         let n = 5 * (1e6 as usize);
-        let tbl = get_table_for_bench(n);
+        let tbl = get_table_for_bench::<Builder>(n);
         let mut it = tbl.iter(Flag::NONE);
         b.iter_batched(
             || {
@@ -333,8 +360,7 @@ fn bench_table(c: &mut Criterion) {
 criterion_group! {
     name = benches_table;
     config = Criterion::default().sample_size(10);
-    targets = bench_table_builder
-    // bench_table
+    targets = bench_table_builder, bench_table
 }
 
 criterion_main!(benches_table);

@@ -201,6 +201,7 @@ fn test_table_iterator() {
         }
         assert_eq!(cnt as usize, n);
     }
+
     for n in [99, 100, 101, 199, 200, 250, 9999, 10000] {
         runner::<SimpleBuilder>(n);
     }

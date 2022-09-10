@@ -292,8 +292,14 @@ pub trait ValueExt {
         buf.put_slice(self.parse_value());
     }
 
+    /// Encode to a mutable buf. This function will copy the value.
+    /// Use [`to_encoded`], if you want a shallow copy when encoded.
     ///
-    fn encode_to_bytes(&self, buf: &mut BytesMut) {
+    /// # Panics
+    /// This function panics if the remaining capacity of slice is less than encoded size.
+    ///
+    /// [`to_encoded`]: #method.to_encoded_to_buf
+    fn encode_to_buf(&self, mut buf: impl BufMut) {
         buf.put_u8(self.get_meta());
         buf.put_u8(self.get_user_meta());
         buf.put_slice(binary_uvarint_allocate(self.get_expires_at()).as_slice());

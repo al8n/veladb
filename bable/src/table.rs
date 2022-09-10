@@ -6,7 +6,7 @@ use super::error::*;
 use vpb::{
     checksum::calculate_checksum,
     kvstructs::{
-        bytes::{BufMut, Bytes, BytesMut},
+        bytes::{BufMut, Bytes},
         Key, Value,
     },
     ChecksumAlgorithm, Compression, Marshaller,
@@ -41,6 +41,24 @@ use zallocator::pool::Allocator;
 const FILE_SUFFIX: &str = "sst";
 const INT_SIZE: usize = core::mem::size_of::<usize>();
 
+///
+///
+/// You can also implement your own table builder, but you must make sure:
+///
+/// 1. The structure of block is the same as:
+///
+///     ```text
+///     +-------------------+---------------------+--------------------+--------------+------------------+
+///     | Entry1            | Entry2              | Entry3             | Entry4       | Entry5           |
+///     +-------------------+---------------------+--------------------+--------------+------------------+
+///     | Entry6            | ...                 | ...                | ...          | EntryN           |
+///     +-------------------+---------------------+--------------------+--------------+------------------+
+///     | Block Meta(contains list of offsets used| Block Meta Size    | Block        | Checksum Size    |
+///     | to perform binary search in the block)  | (4 Bytes)          | Checksum     | (4 Bytes)        |
+///     +-----------------------------------------+--------------------+--------------+------------------+
+///     ```
+///     In case the data is encrypted, the "IV" is added to the end of the block.
+/// 2. a
 pub trait TableBuilder {
     type TableData: TableData;
 
@@ -92,7 +110,7 @@ impl Header {
     }
 
     #[inline]
-    pub fn encode_to_bytes(&self, buf: &mut BytesMut) {
+    pub fn encode_to_buf(&self, mut buf: impl BufMut) {
         buf.put_u16_le(self.overlap);
         buf.put_u16_le(self.diff);
     }
