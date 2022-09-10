@@ -1,3 +1,6 @@
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::{vec, vec::Vec};
 use vpb::{
     checksum::Checksumer,
     compression::Compressor,
@@ -15,77 +18,80 @@ use super::{
 };
 use crate::{bloom::MayContain, error::*, Block, RefCounter};
 
+pub struct MemoryFile {
+    id: u64,
+    filename: String,
+    data: Bytes,
+    created_at: u64,
+}
+
 pub trait TableData {
     fn size(&self) -> usize;
 
-    fn write(self, mut writer: impl BufMut) -> Result<usize>;
+    fn write(self, writer: impl BufMut) -> Result<usize>;
 }
 
 impl super::Table {
-    pub fn create_table(builder: impl TableBuilder) -> Result<Self> {
+    pub fn create_table(id: u64, builder: impl TableBuilder, created_at: u64) -> Result<Self> {
         let opts = builder.options();
         let bd = builder.build()?;
-        let mut bytes = BytesMut::with_capacity(bd.size());
-        // TODO: check written bytes
-        let _written = bd.write(&mut bytes)?;
-        Ok(Self::open_table(bytes.freeze(), opts))
+        match bd {
+            Some(bd) => {
+                let mut bytes = BytesMut::with_capacity(bd.size());
+                // TODO: check written bytes
+                let _written = bd.write(&mut bytes)?;
+                Self::open_table(
+                    MemoryFile {
+                        id,
+                        data: bytes.freeze(),
+                        created_at,
+                        filename: Self::new_filename(id),
+                    },
+                    opts,
+                )
+            }
+            None => Self::open_table(
+                MemoryFile {
+                    id,
+                    data: Bytes::new(),
+                    created_at,
+                    filename: Self::new_filename(id),
+                },
+                opts,
+            ),
+        }
     }
 
-    pub fn create_table_from_buffer(buf: Bytes, opts: RefCounter<Options>) -> Result<Self> {
-        Self::open_table(buf, opts)
-    }
-
-    /// open_in_memory_table is similar to OpenTable but it opens a new table from the provided data.
-    /// open_in_memory_table is used for L0 tables.
-    pub fn open_in_memory_table(data: Vec<u8>, id: u64, opts: RefCounter<Options>) -> Result<Self> {
-        let tbl_size = data.len();
-        let mut this = RawTable {
-            mmap: MmapFileMut::memory_from_vec("memory.sst", data),
-            table_size: tbl_size,
-            index: RefCounter::new(TableIndex::new()),
-            cheap: CheapIndex {
-                max_version: 0,
-                key_count: 0,
-                uncompressed_size: 0,
-                on_disk_size: 0,
-                bloom_filter_length: 0,
-                offsets_length: 0,
-                num_entries: 0,
+    pub fn create_table_from_buffer(
+        id: u64,
+        data: Bytes,
+        created_at: u64,
+        opts: RefCounter<Options>,
+    ) -> Result<Self> {
+        Self::open_table(
+            MemoryFile {
+                id,
+                filename: Self::new_filename(id),
+                data,
+                created_at,
             },
-            smallest: Default::default(),
-            biggest: Default::default(),
-            id, // It is important that each table gets a unique ID.
-            checksum: Default::default(),
-            created_at: std::time::SystemTime::now(),
-            index_start: 0,
-            index_len: 0,
-            has_bloom_filter: false,
-            in_memory: true,
             opts,
-        };
-        this.init_biggest_and_smallest();
-        Ok(this.into())
+        )
     }
 
     /// open_table assumes file has only one table and opens it. Takes ownership of fd upon function
-    /// entry. Returns a table with one reference count on it (decrementing which may delete the file!
-    /// -- consider t.Close() instead). The fd has to writeable because we call Truncate on it before
+    /// entry. The fd has to writeable because we call Truncate on it before
     /// deleting. Checksum for all blocks of table is verified based on value of chkMode.
-    pub fn open_table(mf: Bytes, opts: RefCounter<Options>) -> Result<Self> {
+    pub fn open_table(mf: MemoryFile, opts: RefCounter<Options>) -> Result<Self> {
         // BlockSize is used to compute the approximate size of the decompressed
         // block. It should not be zero if the table is compressed.
         if opts.block_size() == 0 && !opts.compression().is_none() {
             return Err(Error::EmptyBlock);
         }
 
-        let (id, ok) = Self::parse_file_id(MmapFileExt::path(&mf));
-        if !ok {
-            return Err(Error::InvalidFile(format!("{:?}", MmapFileExt::path(&mf))));
-        }
-
         let mut this = RawTable {
             mmap: mf,
-            table_size: meta.size() as usize,
+            table_size: mf.data.len(),
             index: RefCounter::new(Default::default()),
             cheap: CheapIndex {
                 max_version: 0,
@@ -98,14 +104,13 @@ impl super::Table {
             },
             smallest: Default::default(),
             biggest: Default::default(),
-            id,
+            id: mf.id,
             checksum: Default::default(),
-            created_at: meta.modified()?,
+            created_at: mf.created_at,
             index_start: 0,
             index_len: 0,
             has_bloom_filter: false,
             opts,
-            in_memory: false,
         };
         this.init_biggest_and_smallest();
 
@@ -126,33 +131,23 @@ impl super::Table {
 
     /// Returns the creation time for the table.
     #[inline]
-    pub fn created_at(&self) -> std::time::SystemTime {
+    pub fn created_at(&self) -> u64 {
         self.created_at
     }
 
     /// Does the inverse of ParseFileID
     #[inline]
-    pub fn id_to_filename(id: u64) -> PathBuf {
-        let mut pb = PathBuf::from(format!("{:06}", id));
-        pb.set_extension(FILE_SUFFIX);
-        pb
+    pub fn id_to_filename(id: u64) -> String {
+        format!("{:06}.{}", id, FILE_SUFFIX)
     }
 
     /// parse_file_id reads the file id out of a filename.
     #[inline]
-    pub fn parse_file_id<P: AsRef<Path>>(path: P) -> (u64, bool) {
-        if let Some(ext) = path.as_ref().extension() {
-            if !ext.eq(FILE_SUFFIX) {
-                return (0, false);
-            }
-
-            if let Some(name) = path.as_ref().file_stem() {
-                name.to_str()
-                    .map(|sid| {
-                        sid.parse::<u64>()
-                            .map(|id| (id, true))
-                            .unwrap_or((0, false))
-                    })
+    pub fn parse_file_id(path: &str) -> (u64, bool) {
+        if path.ends_with(FILE_SUFFIX) {
+            if let Some(name) = path.split('.').take(1).next() {
+                name.parse::<u64>()
+                    .map(|id| (id, true))
                     .unwrap_or((0, false))
             } else {
                 (0, false)
@@ -165,15 +160,13 @@ impl super::Table {
     /// Should be named TableFilepath -- it combines the dir with the ID to make a table
     /// filepath.
     #[inline]
-    pub fn new_filename(id: u64, mut dir: PathBuf) -> PathBuf {
-        dir.push(format!("{:06}", id));
-        dir.set_extension(FILE_SUFFIX);
-        dir
+    pub fn new_filename(id: u64) -> String {
+        format!("{:06}.{}", id, FILE_SUFFIX)
     }
 }
 
 pub struct RawTable {
-    mmap: BytesMut,
+    mmap: MemoryFile,
 
     /// Initialized in OpenTable, using fd.Stat().
     table_size: usize,
@@ -193,11 +186,10 @@ pub struct RawTable {
 
     checksum: Bytes,
 
-    created_at: std::time::SystemTime,
+    created_at: u64,
     index_start: usize,
     index_len: usize,
     has_bloom_filter: bool,
-    in_memory: bool,
     opts: RefCounter<Options>,
 }
 
@@ -224,8 +216,8 @@ impl RawTable {
     }
 
     #[inline]
-    pub(super) fn path(&self) -> &std::path::Path {
-        self.mmap.path()
+    pub(super) fn path(&self) -> &str {
+        self.mmap.filename.as_str()
     }
 
     #[inline]
@@ -278,11 +270,6 @@ impl RawTable {
         &self.checksum
     }
 
-    #[inline]
-    pub(super) const fn in_memory(&self) -> bool {
-        self.in_memory
-    }
-
     /// Splits the table into at least n ranges based on the block offsets.
     pub(super) fn key_splits(&self, idx: usize, prefix: &[u8]) -> Vec<Key> {
         let mut res = Vec::new();
@@ -316,13 +303,8 @@ impl RawTable {
     }
 
     #[inline(always)]
-    fn read(&self, offset: usize, sz: usize) -> Result<&[u8]> {
-        self.mmap.bytes(offset, sz).map_err(|e| e.into())
-    }
-
-    #[inline(always)]
-    fn read_no_fail(&self, offset: usize, sz: usize) -> &[u8] {
-        self.mmap.bytes(offset, sz).unwrap()
+    fn read(&self, offset: usize, sz: usize) -> &[u8] {
+        &self.mmap.data[offset..offset + sz]
     }
 
     /// Returns true if and only if the table does not have the key hash.
@@ -366,7 +348,7 @@ impl RawTable {
                 {
                     tracing::error!(target: "table", info = "checksum verification failed", err = %e);
                 }
-                Error::BlockChecksumMismatch { table: self.path().to_string_lossy().to_string(), block: i as usize}
+                Error::BlockChecksumMismatch { table: self.path().to_string(), block: i as usize}
             })?;
             // OnBlockRead or OnTableAndBlockRead, we don't need to call verify checksum
             // on block, verification would be done while reading block itself.
@@ -381,7 +363,7 @@ impl RawTable {
                         {
                             tracing::error!(target: "table", info = "checksum verification failed", err = %e);
                         }
-                        Error::BlockOffsetChecksumMismatch { table: self.path().to_string_lossy().to_string(), block: i as usize, offset: blk.offset }
+                        Error::BlockOffsetChecksumMismatch { table: self.path().to_string(), block: i as usize, offset: blk.offset }
                 })?;
             }
         }
@@ -439,7 +421,7 @@ impl RawTable {
         if let Some(cache) = self.opts.block_cache() {
             let key = self.block_cache_key(idx);
             if let Some(blk) = cache.get(key.as_ref()) {
-                return Ok(blk.value().clone());
+                return Ok(blk.clone());
             }
         }
 
@@ -447,18 +429,7 @@ impl RawTable {
         let bo = &index.offsets[idx];
         let offset = bo.offset as usize;
         let bo_len = bo.len as usize;
-        let data = self.read(offset, bo_len).map_err(|e| {
-            #[cfg(feature = "tracing")]
-            {
-                tracing::error!(target: "table", err=%e, info = format!(
-                    "failed to read from table: {:?} at offset: {}, len: {}",
-                    self.path(),
-                    offset,
-                    bo_len
-                ));
-            }
-            e
-        })?;
+        let data = self.read(offset, bo_len);
 
         let encryption = self.opts.encryption();
 
@@ -529,11 +500,11 @@ impl RawTable {
                 if !iter.valid() {
                     #[cfg(feature = "tracing")]
                     {
-                        tracing::error!(target: "table", "failed to initialize biggest key for table: {}", self.path().display());
+                        tracing::error!(target: "table", "failed to initialize biggest key for table: {}", self.path());
                     }
                     panic!(
                         "failed to initialize biggest key for table: {}",
-                        self.path().display()
+                        self.path()
                     );
                 }
                 if let Some(key) = iter.key() {
@@ -547,8 +518,8 @@ impl RawTable {
                     // Get the count of null bytes at the end of file. This is to make sure if there was an
                     // issue with mmap sync or file copy.
                     let mut count = 0;
-                    for i in self.mmap.len() - 1 ..=0 {
-                        if self.mmap.as_slice()[i] != 0 {
+                    for i in self.mmap.data.len() - 1 ..=0 {
+                        if self.mmap.data[i] != 0 {
                             break;
                         }
                         count += 1;
@@ -563,26 +534,26 @@ impl RawTable {
 
                         // Read checksum size.
                         read_pos -= 4;
-                        let buf = self.read_no_fail(read_pos, 4);
+                        let buf = self.read(read_pos, 4);
                         let checksum_len = u32::from_be_bytes(buf.try_into().unwrap());
                         tracing::info!("checksum length: {}", checksum_len);
 
                         // Read checksum
                         read_pos -= checksum_len as usize;
-                        let buf = self.read_no_fail(read_pos, checksum_len as usize);
+                        let buf = self.read(read_pos, checksum_len as usize);
                         let checksum: Checksum = Marshaller::unmarshal(buf).unwrap();
                         tracing::info!("checksum: {:?}", checksum);
 
                         // Read index size from the footer.
                         read_pos -= 4;
-                        let buf = self.read_no_fail(read_pos, 4);
+                        let buf = self.read(read_pos, 4);
                         let index_len = u32::from_be_bytes(buf.try_into().unwrap());
                         tracing::info!("index len: {}", index_len);
 
                         // Read index.
                         read_pos -= 4;
                         self.index_start = read_pos;
-                        let index_data = self.read_no_fail(read_pos, self.index_len);
+                        let index_data = self.read(read_pos, self.index_len);
                         tracing::info!("index: {:?}", index_data);
                     }
                 };
@@ -601,23 +572,23 @@ impl RawTable {
         let mut read_pos = self.table_size;
         // read checksum len from the last 4 bytes.
         read_pos -= 4;
-        let buf = self.read_no_fail(read_pos, 4);
+        let buf = self.read(read_pos, 4);
         let cks_len = u32::from_be_bytes(buf.try_into().unwrap()) as usize;
 
         // read checksum
         read_pos -= cks_len;
-        let buf = self.read_no_fail(read_pos, cks_len);
+        let buf = self.read(read_pos, cks_len);
         let cks = Checksum::unmarshal(buf)?;
 
         // read index size from the footer
         read_pos -= 4;
-        let buf = self.read_no_fail(read_pos, 4);
+        let buf = self.read(read_pos, 4);
         self.index_len = u32::from_be_bytes(buf.try_into().unwrap()) as usize;
 
         // read index
         read_pos -= self.index_len;
         self.index_start = read_pos;
-        let data = self.read_no_fail(read_pos, self.index_len);
+        let data = self.read(read_pos, self.index_len);
         if !data.verify_checksum(cks.sum, Options::checksum(&self.opts)) {
             return Err(Error::ChecksumMismatch);
         }
@@ -649,15 +620,18 @@ impl RawTable {
 
         match self.opts.index_cache() {
             Some(cache) => match cache.get(&self.id) {
-                Some(index) => index.as_ref().clone(),
+                Some(index) => index.clone(),
                 None => {
-                    let index = self.read_table_index().map(RefCounter::new).map_err(|e| {
+                    let index = self.read_table_index()
+                        .map(RefCounter::new)
+                        .map_err(|e| {
                             #[cfg(feature = "tracing")]
                             {
                                 tracing::error!(target: "table", info = "fail to read table idex", err = %e);
                             }
                             e
-                        }).unwrap();
+                        })
+                        .unwrap();
                     #[cfg(feature = "std")]
                     cache.insert(self.id, index.clone(), self.index_len as i64);
                     #[cfg(not(feature = "std"))]
@@ -673,7 +647,7 @@ impl RawTable {
 
     /// read_table_index reads table index from the sst and returns its pb format.
     pub(super) fn read_table_index(&self) -> Result<TableIndex> {
-        let buf = self.read_no_fail(self.index_start, self.index_len);
+        let buf = self.read(self.index_start, self.index_len);
 
         // Decrypt the table index if it is encrypted.
         if self.should_decrypt() {

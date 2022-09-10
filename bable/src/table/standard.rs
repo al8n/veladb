@@ -103,8 +103,7 @@ impl super::Table {
     }
 
     /// open_table assumes file has only one table and opens it. Takes ownership of fd upon function
-    /// entry. Returns a table with one reference count on it (decrementing which may delete the file!
-    /// -- consider t.Close() instead). The fd has to writeable because we call Truncate on it before
+    /// entry. The fd has to writeable because we call Truncate on it before
     /// deleting. Checksum for all blocks of table is verified based on value of chkMode.
     pub fn open_table(mf: MmapFileMut, opts: RefCounter<Options>) -> Result<Self> {
         // BlockSize is used to compute the approximate size of the decompressed

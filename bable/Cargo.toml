@@ -3,10 +3,10 @@ name = "bable"
 version = "0.0.0"
 edition = "2021"
 license = "Apache-2.0/MIT"
-description = "(WIP) badger's ssttable implementation"
+description = "Badger's sst table implementation"
 
 [features]
-default = ["singlethread"]
+default = ["std"]
 full = ["std", "tracing/default"]
 std = ["stretto/sync", "zallocator/std", "zallocator/threadpool", "vpb/std", "vpb/sea-std", "vpb/xxhash64-std", "crossbeam-channel", "crossbeam-utils", "tracing/std", "triomphe/std", "num_cpus", "scopeguard/use_std", "fmmap", "parking_lot", "rand/std", "vela-utils/std", "vela-utils/ref_counter_std"]
 singlethread = ["zallocator/core", "hashbrown", "vela-utils/singlethread", "scopeguard"]

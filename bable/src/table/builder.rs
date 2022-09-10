@@ -364,7 +364,8 @@ impl TableBuilder for Builder {
 impl Builder {
     #[inline]
     fn insert_in(&mut self, key: &Key, val: &Value, value_len: u32, is_stale: bool) {
-        if self.should_finish_block(key.len(), val.encoded_size()) {
+        let val_encoded_size = val.encoded_size();
+        if self.should_finish_block(key.len(), val_encoded_size) {
             if is_stale {
                 // This key will be added to tableIndex and it is stale.
                 self.stale_data_size += key.len()
@@ -375,7 +376,7 @@ impl Builder {
             self.finish_block(true)
         }
 
-        self.insert_helper(key, val, value_len)
+        self.insert_helper(key, val, value_len, val_encoded_size)
     }
 
     /// # Structure of Block.
@@ -509,7 +510,7 @@ impl Builder {
         &new_key[idx..]
     }
 
-    fn insert_helper(&mut self, key: &Key, val: &Value, vplen: u32) {
+    fn insert_helper(&mut self, key: &Key, val: &Value, vplen: u32, val_encoded_size: u32) {
         self.key_hashes.push(hash(key.parse_key()));
 
         let version = key.parse_timestamp();
@@ -544,7 +545,7 @@ impl Builder {
         self.append(&header.encode());
         self.append(diff_key);
 
-        let dst = self.allocate(val.encoded_size() as usize);
+        let dst = self.allocate(val_encoded_size as usize);
         val.encode(dst.as_mut_slice());
 
         // Add the vpLen to the onDisk size. We'll add the size of the block to

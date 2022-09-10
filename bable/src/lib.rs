@@ -17,7 +17,11 @@ use hashbrown::HashMap;
 
 extern crate alloc;
 
+pub use vela_utils;
 pub use vpb;
+pub use vpb::kvstructs;
+pub use vpb::kvstructs::bytes;
+pub use vpb::prost;
 pub use zallocator;
 
 pub mod cache;

@@ -1,14 +1,12 @@
 use super::*;
 
 impl Builder {
-    pub fn new(opts: RefCounter<Options>) -> Result<Self> {
+    pub(super) fn new_in(opts: RefCounter<Options>) -> Result<Self> {
         let sz = (2 * opts.table_size() as usize).min(MAX_ALLOCATOR_INITIAL_SIZE);
 
         let alloc = opts.allocator_pool().fetch(sz, "TableBuilder")?;
         alloc.set_tag("Builder");
-        let cur_block = RefCounter::new(BBlock::new(
-            alloc.allocate((opts.block_size() + PADDING) as u64)?,
-        ));
+        let cur_block = BBlock::new(alloc.allocate((opts.block_size() + PADDING) as u64)?);
 
         Ok(Self {
             opts,
@@ -23,51 +21,6 @@ impl Builder {
             stale_data_size: 0,
             block_list: Vec::new(),
         })
-    }
-
-    fn compress_data(alloc: &Allocator, data: Buffer, compression_algo: Compression) -> Buffer {
-        if compression_algo.is_none() {
-            return data;
-        }
-
-        let buffer = alloc.allocate_unchecked(data.max_encoded_len(compression_algo) as u64);
-        let end = data
-            .compress_to(buffer.as_mut_slice(), compression_algo)
-            .map_err(|e| {
-                #[cfg(feature = "tracing")]
-                {
-                    tracing::error!(target: "table_builder", err=%e, info = "error while compressing block in table builder.");
-                }
-                e
-            })
-            .unwrap();
-        buffer.slice(..end)
-    }
-
-    fn encrypt_data(alloc: &Allocator, data: Buffer, encryption: &Encryption) -> Buffer {
-        let algo = encryption.algorithm();
-        match algo {
-            #[cfg(any(feature = "aes", feature = "aes-std"))]
-            EncryptionAlgorithm::Aes => {
-                let iv = vpb::encrypt::random_iv();
-                let key = encryption.secret();
-
-                let buffer = alloc.allocate_unchecked((data.capacity() + iv.len()) as u64);
-                let slice = buffer.as_mut_slice();
-                data.encrypt_to(&mut slice[..data.capacity()], key, &iv, algo)
-                    .map_err(|e| {
-                        #[cfg(feature = "tracing")]
-                        {
-                            tracing::error!(target: "table_builder", err=%e, info = "error while encrypting block in table builder.");
-                        }
-                        e
-                    })
-                    .unwrap();
-                slice[data.capacity()..].copy_from_slice(&iv);
-                buffer
-            }
-            _ => data,
-        }
     }
 }
 
@@ -102,6 +55,6 @@ impl super::TableData for super::BuildData {
         dst.put_u32(self.checksum_size);
 
         self.opts.allocator_pool().put(self.alloc);
-        written
+        Ok(written)
     }
 }

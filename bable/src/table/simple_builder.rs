@@ -134,7 +134,8 @@ impl super::TableBuilder for SimpleBuilder {
 impl SimpleBuilder {
     #[inline]
     fn insert_in(&mut self, key: &Key, val: &Value, value_len: u32, is_stale: bool) {
-        if self.should_finish_block(key.len(), val.encoded_size()) {
+        let val_encoded_size = val.encoded_size();
+        if self.should_finish_block(key.len(), val_encoded_size) {
             if is_stale {
                 // This key will be added to tableIndex and it is stale.
                 self.stale_data_size += key.len()
@@ -149,7 +150,7 @@ impl SimpleBuilder {
             self.entry_offsets.clear();
         }
 
-        self.insert_helper(key, val, value_len)
+        self.insert_helper(key, val, value_len, val_encoded_size)
     }
 
     /// Structure of Block.
@@ -236,7 +237,7 @@ impl SimpleBuilder {
         &new_key[idx..]
     }
 
-    fn insert_helper(&mut self, key: &Key, val: &Value, vplen: u32) {
+    fn insert_helper(&mut self, key: &Key, val: &Value, vplen: u32, val_encoded_size: u32) {
         self.key_hashes.push(hash(key.parse_key()));
 
         let version = key.parse_timestamp();
@@ -271,7 +272,6 @@ impl SimpleBuilder {
         header.encode_to_buf(&mut self.buf);
         self.buf.put_slice(diff_key);
 
-        let val_encoded_size = val.encoded_size();
         val.encode_to_buf(&mut self.buf);
         let sst_size = val_encoded_size + diff_key_len as u32 + 4;
 

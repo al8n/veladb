@@ -24,6 +24,11 @@ mod no_std;
 #[cfg(not(feature = "std"))]
 use no_std::*;
 
+// #[cfg(feature = "std")]
+// mod no_std;
+// #[cfg(feature = "std")]
+// use no_std::*;
+
 #[cfg(feature = "std")]
 mod standard;
 #[cfg(feature = "std")]
@@ -265,6 +270,7 @@ impl Table {
         self.inner.checksum_bytes()
     }
 
+    #[cfg(feature = "std")]
     #[inline]
     pub fn in_memory(&self) -> bool {
         self.inner.in_memory()
