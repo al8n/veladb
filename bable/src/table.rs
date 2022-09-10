@@ -3,6 +3,7 @@ use crate::RefCounter;
 use self::iterator::UniTableIterator;
 
 use super::error::*;
+use alloc::vec::Vec;
 use vpb::{
     checksum::calculate_checksum,
     kvstructs::{
@@ -206,9 +207,17 @@ impl Table {
         self.inner.id()
     }
 
+    #[cfg(feature = "std")]
     #[inline]
     pub fn path(&self) -> &std::path::Path {
         self.inner.path()
+    }
+
+    #[cfg(not(feature = "std"))]
+    #[inline]
+    pub fn path(&self) -> &str {
+        // self.inner.path()
+        todo!()
     }
 
     #[inline]

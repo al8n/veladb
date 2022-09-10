@@ -6,6 +6,8 @@
 extern crate std;
 
 #[cfg(feature = "ref_counter")]
+extern crate alloc;
+#[cfg(feature = "ref_counter")]
 pub mod ref_counter;
 
 #[cfg(feature = "map_cell")]

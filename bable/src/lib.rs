@@ -32,10 +32,8 @@ pub mod bloom;
 #[cfg(feature = "metrics")]
 pub mod metrics;
 
-#[cfg(feature = "std")]
 mod sync {
     pub use core::sync::atomic::*;
-    pub use triomphe::Arc;
 }
 
 pub use vela_utils::ref_counter::RefCounter;

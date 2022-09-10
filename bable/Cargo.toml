@@ -6,10 +6,10 @@ license = "Apache-2.0/MIT"
 description = "(WIP) badger's ssttable implementation"
 
 [features]
-default = ["std"]
+default = ["singlethread"]
 full = ["std", "tracing/default"]
-std = ["stretto/sync", "zallocator/std", "zallocator/threadpool", "vpb/std", "vpb/sea-std", "vpb/xxhash64-std", "crossbeam-channel", "crossbeam-utils", "tracing/std", "triomphe/std", "num_cpus", "scopeguard", "fmmap", "parking_lot", "rand/std", "vela-utils/std", "vela-utils/ref_counter_std"]
-singlethread = ["zallocator/core", "hashbrown", "vela-utils/singlethread"]
+std = ["stretto/sync", "zallocator/std", "zallocator/threadpool", "vpb/std", "vpb/sea-std", "vpb/xxhash64-std", "crossbeam-channel", "crossbeam-utils", "tracing/std", "triomphe/std", "num_cpus", "scopeguard/use_std", "fmmap", "parking_lot", "rand/std", "vela-utils/std", "vela-utils/ref_counter_std"]
+singlethread = ["zallocator/core", "hashbrown", "vela-utils/singlethread", "scopeguard"]
 
 metrics = ["vela-utils/map_cell", "lazy_static/spin_no_std"]
 metrics-std = ["vela-utils/map_cell_std", "lazy_static"]

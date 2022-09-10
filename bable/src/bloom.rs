@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use core::f64::consts::LN_2;
 
 use vpb::kvstructs::bytes::{BufMut, Bytes, BytesMut};

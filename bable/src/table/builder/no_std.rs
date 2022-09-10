@@ -1,5 +1,4 @@
 use super::*;
-use vpb::kvstructs::bytes::BytesMut;
 
 impl Builder {
     pub fn new(opts: RefCounter<Options>) -> Result<Self> {
@@ -72,9 +71,14 @@ impl Builder {
     }
 }
 
-impl super::BuildData {
+impl super::TableData for super::BuildData {
     #[inline]
-    pub fn write(self, dst: &mut BytesMut) -> usize {
+    fn size(&self) -> usize {
+        self.size as usize
+    }
+
+    #[inline]
+    fn write(self, mut dst: impl BufMut) -> Result<usize> {
         let mut written = 0;
         for blk in &self.block_list {
             let end = blk.end();

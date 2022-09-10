@@ -3,6 +3,7 @@ use crate::{
     bloom::{bloom_bits_per_key, hash, Filter},
     sync::{AtomicU32, Ordering},
 };
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::{ops::Deref, ptr::NonNull};
 use vpb::{

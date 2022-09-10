@@ -1,5 +1,9 @@
 use super::*;
 use crate::{binary_search, Header, HEADER_SIZE};
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::iter::FusedIterator;
 use vpb::kvstructs::{
     bytes::{Bytes, BytesMut},
@@ -58,6 +62,7 @@ impl core::fmt::Display for IterError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for IterError {}
 
 pub(crate) struct BlockIter {
@@ -249,7 +254,7 @@ impl BlockIter {
 
             debug_buf.push_str("==== Recovered ====\n");
             debug_buf.push_str(format!("Table ID: {}\nBlock Idx: {}\nEntry Idx: {}\nData len: {}\nStartOffset: {}\nEndOffset: {}\nEntryOffsets len: {}\nEntryOffsets: {:?}\n", self.table_id, self.block_id, self.idx, self.data.len(), start_offset, end_offset, self.block.entry_offsets.len(), self.block.entry_offsets).as_str());
-
+            #[cfg(feature = "tracing")]
             tracing::error!(target: "table_iterator", "{}", debug_buf);
         );
     }

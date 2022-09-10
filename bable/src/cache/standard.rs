@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::*;
 use stretto::{Cache, CacheCallback, Coster, KeyBuilder, TransparentKeyBuilder, UpdateValidator};
 
 #[doc(hidden)]

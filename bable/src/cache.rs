@@ -1,4 +1,4 @@
-use super::{error::*, table::Block, RefCounter};
+use super::{table::Block, RefCounter};
 use vpb::{kvstructs::bytes::Bytes, TableIndex};
 
 #[cfg(not(feature = "std"))]

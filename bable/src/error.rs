@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug)]
@@ -70,6 +72,7 @@ impl From<vpb::prost::DecodeError> for Error {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<stretto::CacheError> for Error {
     fn from(e: stretto::CacheError) -> Self {
         Error::CacheError(e)
