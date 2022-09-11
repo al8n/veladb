@@ -2,6 +2,37 @@ use super::*;
 use crate::error::*;
 use stretto::{Cache, CacheCallback, Coster, KeyBuilder, TransparentKeyBuilder, UpdateValidator};
 
+pub struct CacheOptions {
+    ignore_internal_cost: bool,
+    cleanup_duration: std::time::Duration,
+    max_cost: i64,
+    num_counters: usize,
+}
+
+impl CacheOptions {
+    #[inline]
+    pub fn new(num_counters: usize, max_cost: i64) -> Self {
+        Self {
+            ignore_internal_cost: false,
+            cleanup_duration: std::time::Duration::from_millis(500),
+            max_cost,
+            num_counters,
+        }
+    }
+
+    #[inline]
+    pub fn set_ignore_internal_cost(mut self, ignore_internal_cost: bool) -> Self {
+        self.ignore_internal_cost = ignore_internal_cost;
+        self
+    }
+
+    #[inline]
+    pub fn set_cleanup_duration(mut self, cleanup_duration: std::time::Duration) -> Self {
+        self.cleanup_duration = cleanup_duration;
+        self
+    }
+}
+
 #[doc(hidden)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NoopIndex;
@@ -48,8 +79,10 @@ pub struct IndexCache(
 );
 
 impl IndexCache {
-    pub fn new(num_counters: usize, max_cost: i64) -> Result<Self> {
-        Cache::builder(num_counters, max_cost)
+    pub fn new(opts: CacheOptions) -> Result<Self> {
+        Cache::builder(opts.num_counters, opts.max_cost)
+            .set_ignore_internal_cost(opts.ignore_internal_cost)
+            .set_cleanup_duration(opts.cleanup_duration)
             .set_callback(NoopIndex)
             .set_coster(NoopIndex)
             .set_update_validator(NoopIndex)
@@ -163,8 +196,10 @@ pub struct BlockCache(
 );
 
 impl BlockCache {
-    pub fn new(num_counters: usize, max_cost: i64) -> Result<Self> {
-        Cache::builder(num_counters, max_cost)
+    pub fn new(opts: CacheOptions) -> Result<Self> {
+        Cache::builder(opts.num_counters, opts.max_cost)
+            .set_ignore_internal_cost(opts.ignore_internal_cost)
+            .set_cleanup_duration(opts.cleanup_duration)
             .set_callback(NoopBlock)
             .set_coster(NoopBlock)
             .set_update_validator(NoopBlock)

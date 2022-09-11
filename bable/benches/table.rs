@@ -1,5 +1,9 @@
+use std::path::PathBuf;
+
 use bable::{
-    BableIterator, Builder, Flag, Options, RefCounter, SimpleBuilder, Table, TableBuilder,
+    cache::{BlockCache, CacheOptions, IndexCache},
+    BableIterator, Builder, Flag, MergeTableIterator, Options, RefCounter, SimpleBuilder, Table,
+    TableBuilder, TableIterator,
 };
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use rand::{thread_rng, Rng, RngCore};
@@ -63,10 +67,10 @@ fn bench_table_builder(c: &mut Criterion) {
         let vs = Value::from(rand_value());
 
         let opt = RefCounter::new(
-            Options::default_with_pool(AllocatorPool::new(1)).set_compression(vpb::Compression {
-                algo: vpb::CompressionAlgorithm::None,
-                level: 0,
-            }),
+            Options::default_with_pool(AllocatorPool::new(1))
+                .set_table_size(5 << 20)
+                .set_block_size(4 * 1024)
+                .set_compression(vpb::Compression::new()),
         );
 
         b.iter(|| {
@@ -91,10 +95,10 @@ fn bench_table_builder(c: &mut Criterion) {
         let vs = Value::from(rand_value());
 
         let opt = RefCounter::new(
-            Options::default_with_pool(AllocatorPool::new(1)).set_compression(vpb::Compression {
-                algo: vpb::CompressionAlgorithm::None,
-                level: 0,
-            }),
+            Options::default_with_pool(AllocatorPool::new(1))
+                .set_table_size(5 << 20)
+                .set_block_size(4 * 1024)
+                .set_compression(vpb::Compression::new()),
         );
 
         b.iter(|| {
@@ -119,10 +123,8 @@ fn bench_table_builder(c: &mut Criterion) {
         let vs = Value::from(rand_value());
 
         let opt = RefCounter::new(
-            Options::default_with_pool(AllocatorPool::new(1)).set_compression(vpb::Compression {
-                algo: vpb::CompressionAlgorithm::None,
-                level: 0,
-            }),
+            Options::default_with_pool(AllocatorPool::new(1))
+                .set_compression(vpb::Compression::snappy()),
         );
 
         b.iter(|| {
@@ -147,9 +149,8 @@ fn bench_table_builder(c: &mut Criterion) {
         let vs = Value::from(rand_value());
 
         let opt = RefCounter::new(
-            Options::default_with_pool(AllocatorPool::new(1)).set_compression(
-                vpb::Compression::new().set_algorithm(vpb::CompressionAlgorithm::Lz4),
-            ),
+            Options::default_with_pool(AllocatorPool::new(1))
+                .set_compression(vpb::Compression::lz4()),
         );
 
         b.iter(|| {
@@ -257,6 +258,7 @@ fn bench_table_builder(c: &mut Criterion) {
 
         let opt = RefCounter::new(
             Options::default_with_pool(AllocatorPool::new(1))
+                .set_index_cache(IndexCache::new(CacheOptions::new(1000, 1 << 20)).unwrap())
                 .set_encryption(vpb::Encryption::aes(key)),
         );
 
@@ -289,12 +291,11 @@ fn bench_table(c: &mut Criterion) {
         b.iter(|| {
             let mut it = tbl.iter(Flag::NONE);
             let mut builder = SimpleBuilder::new(RefCounter::new(
-                Options::default_with_pool(AllocatorPool::new(1)).set_compression(
-                    vpb::Compression {
-                        algo: vpb::CompressionAlgorithm::None,
-                        level: 0,
-                    },
-                ),
+                Options::default_with_pool(AllocatorPool::new(1))
+                    .set_compression(vpb::Compression::new())
+                    .set_block_cache(
+                        BlockCache::new(CacheOptions::new(1000000 * 10, 1000000)).unwrap(),
+                    ),
             ))
             .unwrap();
             it.seek_to_first();
@@ -316,12 +317,11 @@ fn bench_table(c: &mut Criterion) {
         b.iter(|| {
             let mut it = tbl.iter(Flag::NONE);
             let mut builder = Builder::new(RefCounter::new(
-                Options::default_with_pool(AllocatorPool::new(1)).set_compression(
-                    vpb::Compression {
-                        algo: vpb::CompressionAlgorithm::None,
-                        level: 0,
-                    },
-                ),
+                Options::default_with_pool(AllocatorPool::new(1))
+                    .set_compression(vpb::Compression::new())
+                    .set_block_cache(
+                        BlockCache::new(CacheOptions::new(1000000 * 10, 1000000)).unwrap(),
+                    ),
             ))
             .unwrap();
             it.seek_to_first();
@@ -338,6 +338,95 @@ fn bench_table(c: &mut Criterion) {
     });
 
     let mut rng = thread_rng();
+    const M: usize = 5; //num of tables
+    const N: usize = 5 * (1e6 as usize);
+    const TABLE_SIZE: usize = N / M;
+    c.bench_function("bench table merged (simple builder)", |b| {
+        b.iter_batched(
+            || {
+                let cache = BlockCache::new(CacheOptions::new(1000000 * 10, 1000000)).unwrap();
+                let mut tables = vec![];
+                for i in 0..M {
+                    let mut filename = PathBuf::new();
+                    filename.push(std::env::temp_dir());
+                    filename.push(rng.next_u32().to_string());
+                    filename.set_extension("sst");
+                    let opts = RefCounter::new(
+                        Options::default_with_pool(AllocatorPool::new(1))
+                            .set_compression(vpb::Compression::new())
+                            .set_block_size(4 * 1024)
+                            .set_block_cache(cache.clone()),
+                    );
+                    let mut builder = SimpleBuilder::new(opts).unwrap();
+                    for j in 0..TABLE_SIZE {
+                        let id = j * M + i;
+                        let k = format!("{:016x}", id);
+                        let v = format!("{}", id);
+                        builder.insert(&Key::from(k), &Value::from(v), 0);
+                    }
+                    let tbl = Table::create_table(filename, builder).unwrap();
+                    tables.push(tbl);
+                }
+                tables
+            },
+            |tables| {
+                let mut iters = vec![];
+                for tbl in tables {
+                    iters.push(Box::new(TableIterator::Uni(tbl.iter(Flag::NONE))));
+                }
+                let mut iter = MergeTableIterator::new(iters, false).unwrap();
+                iter.rewind();
+                while iter.valid() {
+                    iter.next();
+                }
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    c.bench_function("bench table merged", |b| {
+        b.iter_batched(
+            || {
+                let cache = BlockCache::new(CacheOptions::new(1000000 * 10, 1000000)).unwrap();
+                let mut tables = vec![];
+                for i in 0..M {
+                    let mut filename = PathBuf::new();
+                    filename.push(std::env::temp_dir());
+                    filename.push(rng.next_u32().to_string());
+                    filename.set_extension("sst");
+                    let opts = RefCounter::new(
+                        Options::default_with_pool(AllocatorPool::new(1))
+                            .set_compression(vpb::Compression::new())
+                            .set_block_size(4 * 1024)
+                            .set_block_cache(cache.clone()),
+                    );
+                    let mut builder = Builder::new(opts).unwrap();
+                    for j in 0..TABLE_SIZE {
+                        let id = j * M + i;
+                        let k = format!("{:016x}", id);
+                        let v = format!("{}", id);
+                        builder.insert(&Key::from(k), &Value::from(v), 0);
+                    }
+                    let tbl = Table::create_table(filename, builder).unwrap();
+                    tables.push(tbl);
+                }
+                tables
+            },
+            |tables| {
+                let mut iters = vec![];
+                for tbl in tables {
+                    iters.push(Box::new(TableIterator::Uni(tbl.iter(Flag::NONE))));
+                }
+                let mut iter = MergeTableIterator::new(iters, false).unwrap();
+                iter.rewind();
+                while iter.valid() {
+                    iter.next();
+                }
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
     c.bench_function("bench random read", |b| {
         let n = 5 * (1e6 as usize);
         let tbl = get_table_for_bench::<Builder>(n);

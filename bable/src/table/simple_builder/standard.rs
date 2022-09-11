@@ -9,7 +9,9 @@ impl SimpleBuilder {
         }
 
         Ok(Self {
-            buf: BytesMut::with_capacity((16 << 20) + opts.table_size() as usize),
+            buf: BytesMut::with_capacity(
+                ((2 * opts.table_size()) as usize).min(MAX_ALLOCATOR_INITIAL_SIZE),
+            ),
             base_key: Default::default(),
             last_block_offset: 0,
             key_hashes: Default::default(),
