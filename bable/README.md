@@ -17,31 +17,6 @@
 
 </div>
 
-
-# Benchmarks
-```
-                    'c.          
-                 ,xNMM.          ------------------------ 
-               .OMMMMo           OS: macOS 12.3.1 21E258 arm64 
-               OMMM0,            Host: MacBookPro18,2 
-     .;loddo:' loolloddol;.      Kernel: 21.4.0 
-   cKMMMMMMMMMMNWMMMMMMMMMM0:    Uptime: 15 hours, 50 mins 
- .KMMMMMMMMMMMMMMMMMMMMMMMWd.    Packages: 160 (brew) 
- XMMMMMMMMMMMMMMMMMMMMMMMX.      Shell: zsh 5.8 
-;MMMMMMMMMMMMMMMMMMMMMMMM:       Resolution: 1728x1117 
-:MMMMMMMMMMMMMMMMMMMMMMMM:       DE: Aqua 
-.MMMMMMMMMMMMMMMMMMMMMMMMX.      WM: Amethyst 
- kMMMMMMMMMMMMMMMMMMMMMMMMWd.    Terminal: kitty 
- .XMMMMMMMMMMMMMMMMMMMMMMMMMMk   CPU: Apple M1 Max 
-  .XMMMMMMMMMMMMMMMMMMMMMMMMK.   GPU: Apple M1 Max 
-    kMMMMMMMMMMMMMMMMMMMMMMd     Memory: 3378MiB / 32768MiB 
-     ;KMMMMMMMWXXWMMMMMMMk.
-       .cooc,.    .,coo:.                                
-                                                         
-```
-
-
-
 ## License
 
 <sup>

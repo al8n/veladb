@@ -29,11 +29,9 @@ pub fn rand_value() -> Vec<u8> {
 }
 
 fn get_table_for_bench<B: TableBuilder>(count: usize) -> Table {
-    let opts =
-        Options::default_with_pool(AllocatorPool::new(1)).set_compression(vpb::Compression {
-            algo: vpb::CompressionAlgorithm::None,
-            level: 0,
-        });
+    let opts = Options::default_with_pool(AllocatorPool::new(1))
+        .set_compression(vpb::Compression::new())
+        .set_block_cache(BlockCache::new(CacheOptions::new(1000000 * 10, 1000000)).unwrap());
 
     let mut builder = B::new(RefCounter::new(opts)).unwrap();
     let mut rng = thread_rng();
