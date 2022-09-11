@@ -1,11 +1,13 @@
 [package]
 name = "bable"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0/MIT"
 description = "Badger's high performance sst table implementation"
 repository = "https://github.com/al8n/veladb/tree/main/bable"
 readme = "README.md"
+keywords = ["sstable", "ssttable", "badger", "database", "sst"]
+categories = ["database-implementations", "data-structures", "no-std"]
 
 [features]
 default = ["std"]
@@ -53,5 +55,5 @@ zallocator = { path = "../zallocator", default-features = false }
 tikv-jemallocator = "0.5"
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.4"
 vpb = { path = "../vpb", features = ["full"] }
