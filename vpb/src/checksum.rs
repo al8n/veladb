@@ -4,6 +4,8 @@ pub use seahash::*;
 #[cfg(any(feature = "xxhash64", feature = "xxhash64-std"))]
 pub use xxhash_rust::xxh64::*;
 
+pub use crc32fast;
+
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Checksum {
     /// For storing type of Checksum algorithm used

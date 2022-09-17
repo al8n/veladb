@@ -1,10 +1,11 @@
+use crate::IV;
 use kvstructs::bytes::Bytes;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DataKey {
     pub key_id: u64,
     pub data: Bytes,
-    pub iv: Bytes,
+    pub iv: IV,
     pub created_at: u64,
 }
 
@@ -19,7 +20,7 @@ impl DataKey {
         Self {
             key_id: 0,
             data: Bytes::new(),
-            iv: Bytes::new(),
+            iv: IV::new(),
             created_at: 0,
         }
     }
@@ -37,9 +38,7 @@ impl prost::Message for DataKey {
         if self.data != b"" as &[u8] {
             ::prost::encoding::bytes::encode(2u32, &self.data, buf);
         }
-        if self.iv != b"" as &[u8] {
-            ::prost::encoding::bytes::encode(3u32, &self.iv, buf);
-        }
+        ::prost::encoding::message::encode(3u32, &self.iv, buf);
         if self.created_at != 0u64 {
             ::prost::encoding::uint64::encode(4u32, &self.created_at, buf);
         }
@@ -73,10 +72,12 @@ impl prost::Message for DataKey {
             }
             3u32 => {
                 let value = &mut self.iv;
-                ::prost::encoding::bytes::merge(wire_type, value, buf, ctx).map_err(|mut error| {
-                    error.push(STRUCT_NAME, "iv");
-                    error
-                })
+                ::prost::encoding::message::merge(wire_type, value, buf, ctx).map_err(
+                    |mut error| {
+                        error.push(STRUCT_NAME, "iv");
+                        error
+                    },
+                )
             }
             4u32 => {
                 let value = &mut self.created_at;
@@ -98,15 +99,12 @@ impl prost::Message for DataKey {
             ::prost::encoding::bytes::encoded_len(2u32, &self.data)
         } else {
             0
-        }) + (if self.iv != b"" as &[u8] {
-            ::prost::encoding::bytes::encoded_len(3u32, &self.iv)
-        } else {
-            0
-        }) + (if self.created_at != 0u64 {
-            ::prost::encoding::uint64::encoded_len(4u32, &self.created_at)
-        } else {
-            0
-        })
+        }) + ::prost::encoding::message::encoded_len(3u32, &self.iv)
+            + (if self.created_at != 0u64 {
+                ::prost::encoding::uint64::encoded_len(4u32, &self.created_at)
+            } else {
+                0
+            })
     }
     fn clear(&mut self) {
         self.key_id = 0u64;

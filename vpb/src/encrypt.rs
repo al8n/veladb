@@ -1,10 +1,129 @@
+use core::convert::TryInto;
+
 #[cfg(any(feature = "aes", feature = "aes-std"))]
 use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherError};
 #[cfg(any(feature = "aes", feature = "aes-std"))]
 use aes::{Aes128, Aes192, Aes256};
+use alloc::vec::Vec;
 use kvstructs::bytes::Bytes;
+use rand::RngCore;
 
 pub const BLOCK_SIZE: usize = 16;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[repr(transparent)]
+pub struct IV {
+    iv: [u8; BLOCK_SIZE],
+}
+
+impl IV {
+    pub const fn new() -> Self {
+        Self {
+            iv: [0; BLOCK_SIZE],
+        }
+    }
+
+    pub fn random() -> Self {
+        Self { iv: random_iv() }
+    }
+}
+
+impl core::ops::Deref for IV {
+    type Target = [u8; BLOCK_SIZE];
+
+    fn deref(&self) -> &Self::Target {
+        &self.iv
+    }
+}
+
+impl core::ops::DerefMut for IV {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.iv
+    }
+}
+
+impl AsRef<[u8]> for IV {
+    fn as_ref(&self) -> &[u8] {
+        &self.iv
+    }
+}
+
+impl AsMut<[u8]> for IV {
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.iv
+    }
+}
+
+impl prost::Message for IV {
+    fn encode_raw<B>(&self, buf: &mut B)
+    where
+        B: kvstructs::bytes::BufMut,
+        Self: Sized,
+    {
+        let high = u64::from_le_bytes(self.iv[..8].try_into().unwrap());
+        let low = u64::from_le_bytes(self.iv[8..].try_into().unwrap());
+        prost::encoding::uint64::encode(1u32, &high, buf);
+        prost::encoding::uint64::encode(2u32, &low, buf);
+    }
+
+    fn merge_field<B>(
+        &mut self,
+        tag: u32,
+        wire_type: prost::encoding::WireType,
+        buf: &mut B,
+        ctx: prost::encoding::DecodeContext,
+    ) -> Result<(), prost::DecodeError>
+    where
+        B: kvstructs::bytes::Buf,
+        Self: Sized,
+    {
+        const STRUCT_NAME: &str = "IV";
+
+        match tag {
+            1u32 => {
+                let mut high = 0;
+                ::prost::encoding::uint64::merge(wire_type, &mut high, buf, ctx)
+                    .map(|_| {
+                        self.iv[..8].copy_from_slice(&high.to_le_bytes());
+                    })
+                    .map_err(|mut error| {
+                        error.push(STRUCT_NAME, "high");
+                        error
+                    })
+            }
+            2u32 => {
+                let mut low = 0;
+                ::prost::encoding::uint64::merge(wire_type, &mut low, buf, ctx)
+                    .map(|_| {
+                        self.iv[8..].copy_from_slice(&low.to_le_bytes());
+                    })
+                    .map_err(|mut error| {
+                        error.push(STRUCT_NAME, "low");
+                        error
+                    })
+            }
+            _ => ::prost::encoding::skip_field(wire_type, tag, buf, ctx),
+        }
+    }
+
+    fn encoded_len(&self) -> usize {
+        let high = u64::from_le_bytes(self.iv[..8].try_into().unwrap());
+        let low = u64::from_le_bytes(self.iv[8..].try_into().unwrap());
+        (if high != 0u64 {
+            ::prost::encoding::uint64::encoded_len(1u32, &high)
+        } else {
+            0
+        }) + (if low != 0u64 {
+            ::prost::encoding::uint64::encoded_len(2u32, &low)
+        } else {
+            0
+        })
+    }
+
+    fn clear(&mut self) {
+        self.iv = [0; BLOCK_SIZE];
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -12,20 +131,6 @@ pub enum EncryptionAlgorithm {
     None = 0,
     #[cfg(any(feature = "aes", feature = "aes-std"))]
     Aes = 1,
-}
-
-impl EncryptionAlgorithm {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            EncryptionAlgorithm::None => "None",
-            #[cfg(any(feature = "aes", feature = "aes-std"))]
-            EncryptionAlgorithm::Aes => "Aes",
-        }
-    }
 }
 
 impl EncryptionAlgorithm {
@@ -46,15 +151,38 @@ impl EncryptionAlgorithm {
             _ => false,
         }
     }
+
+    #[inline]
+    pub const fn iv_length(&self) -> usize {
+        match self {
+            #[cfg(any(feature = "aes", feature = "aes-std"))]
+            EncryptionAlgorithm::Aes => BLOCK_SIZE,
+            EncryptionAlgorithm::None => 0,
+        }
+    }
+
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            EncryptionAlgorithm::None => "None",
+            #[cfg(any(feature = "aes", feature = "aes-std"))]
+            EncryptionAlgorithm::Aes => "Aes",
+        }
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Encryption {
     algo: EncryptionAlgorithm,
     secret: kvstructs::bytes::Bytes,
 }
 
 impl Encryption {
+    pub const BLOCK_SIZE: usize = BLOCK_SIZE;
+
     #[inline]
     pub const fn new() -> Self {
         Self {
@@ -109,12 +237,6 @@ impl Encryption {
     #[inline]
     pub fn secret_bytes(&self) -> kvstructs::bytes::Bytes {
         self.secret.clone()
-    }
-
-    /// The block size for encryption algorithm
-    #[inline]
-    pub const fn block_size(&self) -> usize {
-        block_size(self.algo)
     }
 }
 
@@ -305,6 +427,11 @@ pub trait Encryptor {
         let src = self.as_ref();
         encrypt_to(dst, src, key, iv, algo)
     }
+
+    /// Check if the private key length is valid
+    fn is_valid_key_length(secret: &[u8], algo: EncryptionAlgorithm) -> bool {
+        is_valid_key_length(secret, algo)
+    }
 }
 
 impl<T> Encryptor for T {}
@@ -409,13 +536,29 @@ fn aes_encrypt_in(dst: &mut [u8], key: &[u8], iv: &[u8]) -> Result<(), EncryptEr
     }
 }
 
+/// Check if the private key length is valid
+#[inline]
+pub const fn is_valid_key_length(secret: &[u8], algo: EncryptionAlgorithm) -> bool {
+    match algo {
+        #[cfg(all(any(feature = "aes", feature = "aes-std")))]
+        EncryptionAlgorithm::Aes => {
+            let key_len = secret.len();
+            key_len == 16 || key_len == 24 || key_len == 32
+        }
+        EncryptionAlgorithm::None => true,
+    }
+}
+
 /// generates IV.
+#[inline]
 pub fn random_iv() -> [u8; BLOCK_SIZE] {
     #[cfg(feature = "std")]
     {
-        use rand::{thread_rng, Rng};
+        use rand::thread_rng;
         let mut rng = thread_rng();
-        rng.gen::<[u8; BLOCK_SIZE]>()
+        let mut key = [0u8; BLOCK_SIZE];
+        rng.fill_bytes(&mut key);
+        key
     }
 
     #[cfg(not(feature = "std"))]

@@ -9,7 +9,7 @@ use vpb::{
         bytes::{BufMut, Bytes, BytesMut},
         Key, KeyExt,
     },
-    BlockOffset, Checksum, Compression, Marshaller, TableIndex,
+    BlockOffset, Checksum, Compression, Encryption, Marshaller, TableIndex,
 };
 
 use super::{
@@ -726,7 +726,7 @@ impl RawTable {
     #[inline]
     fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
         let encryption = self.opts.encryption();
-        let block_size = encryption.block_size();
+        let block_size = Encryption::BLOCK_SIZE;
         // Last BlockSize bytes of the data is the IV.
         let iv = &data[data.len() - block_size..];
         // reset all bytes are data.

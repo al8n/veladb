@@ -47,9 +47,9 @@ rand = { version = "0.8", default-features = false }
 scopeguard = { version = "1.1", optional = true }
 stretto = { version = "0.7", optional = true, default-features = false }
 tracing = { version = "0.1", optional = true, default-features = false }
-vela-utils = { path = "../utils", default-features = false, features = ["ref_counter"] }
-vpb = { path = "../vpb", default-features = false, features = ["sea", "xxhash64"] }
-zallocator = { path = "../zallocator", default-features = false }
+vela-utils = { version = "0.1", path = "../utils", default-features = false, features = ["ref_counter"] }
+vpb = { version = "0.1", path = "../vpb", default-features = false, features = ["sea", "xxhash64"] }
+zallocator = { version = "0.3", path = "../zallocator", default-features = false }
 
 [target.'cfg(not(target_env = "msvc"))'.dev-dependencies]
 tikv-jemallocator = "0.5"

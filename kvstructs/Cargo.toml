@@ -1,6 +1,6 @@
 [package]
 name = "kvstructs"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 repository = "https://github.com/al8n/veladb/tree/main/kvstructs"
 description = "General basic key-value structs for Key-Value based storages."

@@ -18,7 +18,7 @@ pub use compression::{Compression, CompressionAlgorithm};
 
 /// Encryption/Decryption
 pub mod encrypt;
-pub use encrypt::{Encryption, EncryptionAlgorithm};
+pub use encrypt::{Encryption, EncryptionAlgorithm, IV};
 
 /// Checksum calculation.
 pub mod checksum;

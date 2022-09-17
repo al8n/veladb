@@ -487,7 +487,7 @@ impl Builder {
             + entires_offset_size
             // IV is added at the end of the block, while encrypting.
 		    // So, size of IV is added to estimatedSize.
-            + self.opts.encryption().block_size() as u32;
+            + Encryption::BLOCK_SIZE as u32;
 
         // Integer overflow check for table size.
         assert!((current_block_end as u64) + (estimated_size as u64) < u32::MAX as u64);
