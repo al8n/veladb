@@ -1,4 +1,7 @@
-use crate::{binary_put_uvariant_to_bufmut, binary_put_uvariant_to_vec, binary_uvarint};
+use crate::{
+    binary_put_uvariant_to_buf, binary_put_uvariant_to_bufmut, binary_put_uvariant_to_vec,
+    binary_uvarint,
+};
 use alloc::vec::Vec;
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -10,23 +13,43 @@ pub const MAX_HEADER_SIZE: usize = 21;
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(C)]
 pub struct Header {
-    meta: u8,
-    user_meta: u8,
-    k_len: u32,
-    v_len: u32,
-    expires_at: u64,
+    pub(crate) meta: u8,
+    pub(crate) user_meta: u8,
+    pub(crate) k_len: u32,
+    pub(crate) v_len: u32,
+    pub(crate) expires_at: u64,
+}
+
+impl Default for Header {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Header {
+    /// Create a new header.
+    pub const fn new() -> Self {
+        Self {
+            meta: 0,
+            user_meta: 0,
+            k_len: 0,
+            v_len: 0,
+            expires_at: 0,
+        }
+    }
+
     /// Encodes the header into `Vec<u8>`. The provided `Vec<u8>` should be at least 5 bytes. The
     /// function will panic if out `Vec<u8>` isn't large enough to hold all the values.
     /// The encoded header looks like
+    ///
+    /// ```text
     /// +------+----------+------------+--------------+-----------+
     ///
     /// | Meta | UserMeta | Key Length | Value Length | ExpiresAt |
     ///
     /// +------+----------+------------+--------------+-----------+
-    pub fn encode(&self) -> (usize, Vec<u8>) {
+    /// ```
+    pub fn encode_to_vec(&self) -> (usize, Vec<u8>) {
         let mut buf = Vec::with_capacity(MAX_HEADER_SIZE);
         buf.push(self.meta);
         buf.push(self.user_meta);
@@ -42,11 +65,13 @@ impl Header {
     /// function will panic if out `Bytes` isn't large enough to hold all the values.
     /// The encoded header looks like
     ///
+    /// ```text
     /// +------+----------+------------+--------------+-----------+
     ///
     /// | Meta | UserMeta | Key Length | Value Length | ExpiresAt |
     ///
     /// +------+----------+------------+--------------+-----------+
+    /// ```
     pub fn encode_to_bytes(&self) -> (usize, Bytes) {
         let mut buf = BytesMut::with_capacity(MAX_HEADER_SIZE);
         buf.put_u8(self.meta);
@@ -57,6 +82,28 @@ impl Header {
         index += binary_put_uvariant_to_bufmut(&mut buf, self.v_len as u64);
         index += binary_put_uvariant_to_bufmut(&mut buf, self.expires_at);
         (index, buf.freeze())
+    }
+
+    /// Encodes the header into `Bytes`. The provided `Bytes` should be at least 5 bytes. The
+    /// function will panic if out `Bytes` isn't large enough to hold all the values.
+    /// The encoded header looks like
+    ///
+    /// ```text
+    /// +------+----------+------------+--------------+-----------+
+    ///
+    /// | Meta | UserMeta | Key Length | Value Length | ExpiresAt |
+    ///
+    /// +------+----------+------------+--------------+-----------+
+    /// ```
+    pub fn encode(&self, buf: &mut [u8]) -> usize {
+        buf[0] = self.meta;
+        buf[1] = self.user_meta;
+        let mut index = 2;
+
+        index += binary_put_uvariant_to_buf(&mut buf[index..], self.k_len as u64);
+        index += binary_put_uvariant_to_buf(&mut buf[index..], self.v_len as u64);
+        index += binary_put_uvariant_to_buf(&mut buf[index..], self.expires_at);
+        index
     }
 
     /// Decode Header from byte slice, returns Header and number of bytes read
@@ -138,8 +185,9 @@ impl Header {
 
     /// Set the value length
     #[inline]
-    pub fn set_value_len(&mut self, vlen: u32) {
-        self.v_len = vlen
+    pub fn set_value_len(mut self, vlen: u32) -> Self {
+        self.v_len = vlen;
+        self
     }
 
     /// Get the key length
@@ -150,8 +198,9 @@ impl Header {
 
     /// Set the key length
     #[inline]
-    pub fn set_key_len(&mut self, klen: u32) {
-        self.k_len = klen
+    pub fn set_key_len(mut self, klen: u32) -> Self {
+        self.k_len = klen;
+        self
     }
 
     /// Get the meta
@@ -162,8 +211,9 @@ impl Header {
 
     /// Set the meta
     #[inline]
-    pub fn set_meta(&mut self, meta: u8) {
-        self.meta = meta
+    pub fn set_meta(mut self, meta: u8) -> Self {
+        self.meta = meta;
+        self
     }
 
     /// Get the user meta
@@ -174,8 +224,9 @@ impl Header {
 
     /// Set the user meta
     #[inline]
-    pub fn set_user_meta(&mut self, user_meta: u8) {
-        self.meta = user_meta
+    pub fn set_user_meta(mut self, user_meta: u8) -> Self {
+        self.user_meta = user_meta;
+        self
     }
 
     /// Get the expires_at
@@ -186,8 +237,9 @@ impl Header {
 
     /// Set the expires_at
     #[inline]
-    pub fn set_expires_at(&mut self, expires_at: u64) {
-        self.expires_at = expires_at
+    pub fn set_expires_at(mut self, expires_at: u64) -> Self {
+        self.expires_at = expires_at;
+        self
     }
 }
 

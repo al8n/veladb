@@ -267,6 +267,18 @@ fn binary_put_uvariant_to_bufmut(buf: &mut BytesMut, mut x: u64) -> usize {
     i + 1
 }
 
+#[inline]
+fn binary_put_uvariant_to_buf(buf: &mut [u8], mut x: u64) -> usize {
+    let mut i = 0;
+    while x >= 0x80 {
+        buf[i] = (x as u8) | 0x80;
+        x >>= 7;
+        i += 1;
+    }
+    buf[i] = x as u8;
+    i + 1
+}
+
 cfg_std! {
     /// Uvariant overflows a 64-bit integer
     #[derive(Copy, Clone, Debug)]

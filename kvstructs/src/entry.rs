@@ -45,25 +45,37 @@ impl Entry {
 
     /// Get the key
     #[inline]
-    pub fn get_key(&self) -> &Key {
+    pub const fn get_key(&self) -> &Key {
         &self.key
     }
 
     /// Get the value
     #[inline]
-    pub fn get_value(&self) -> &Value {
+    pub const fn get_value(&self) -> &Value {
         &self.val
     }
 
     /// Get the length of the header
     #[inline]
-    pub fn get_header_len(&self) -> usize {
+    pub const fn get_header_len(&self) -> usize {
         self.h_len
+    }
+
+    /// Get the header
+    #[inline]
+    pub fn get_header(&self) -> crate::header::Header {
+        crate::header::Header {
+            k_len: self.key.len() as u32,
+            v_len: self.val.len() as u32,
+            expires_at: self.val.get_expires_at(),
+            meta: self.val.get_meta(),
+            user_meta: self.val.get_user_meta(),
+        }
     }
 
     /// Get the value threshold
     #[inline]
-    pub fn get_value_threshold(&self) -> u64 {
+    pub const fn get_value_threshold(&self) -> u64 {
         self.val_threshold
     }
 
@@ -86,6 +98,18 @@ impl Entry {
     #[inline]
     pub fn set_ttl(&mut self, dur: u64) {
         self.val.expires_at = dur;
+    }
+
+    /// Set the offset
+    #[inline]
+    pub fn set_offset(&mut self, offset: u32) {
+        self.offset = offset;
+    }
+
+    /// Returns the offset
+    #[inline]
+    pub const fn get_offset(&self) -> u32 {
+        self.offset
     }
 
     /// Adds a marker to Entry e. This means all the previous versions of the key (of the

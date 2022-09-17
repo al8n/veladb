@@ -40,7 +40,7 @@ fmmap = { version = "0.3", optional = true }
 getrandom = { version = "0.2", optional = true, default-features = false }
 hashbrown = { version = "0.12", default-features = false, optional = true }
 lazy_static = { version = "1.4", optional = true, default-features = false }
-lru = { version = "0.7", default-features = false }
+lru = { version = "0.8", default-features = false }
 num_cpus = { version = "1.13", optional = true }
 parking_lot = { version = "0.12", optional = true }
 rand = { version = "0.8", default-features = false }

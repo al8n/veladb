@@ -63,6 +63,17 @@ impl RegistryOptions {
     }
 
     #[inline]
+    pub const fn dir(&self) -> &PathBuf {
+        &self.dir
+    }
+
+    #[inline]
+    pub fn set_dir(mut self, dir: PathBuf) -> Self {
+        self.dir = dir;
+        self
+    }
+
+    #[inline]
     pub const fn set_in_memory(mut self) -> Self {
         self.in_memory = true;
         self
@@ -118,6 +129,7 @@ impl RegistryOptions {
 }
 
 /// Structure of Key Registry.
+/// This structure is lock free.
 ///
 /// ```text
 /// +-------------------+---------------------+--------------------+--------------+------------------+
@@ -220,7 +232,7 @@ impl MemoryRegistry {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_millis() as u64;
+            .as_secs();
         if self.opts.encryption().is_none() {
             let dk = DataKey {
                 key_id: inner.next_key_id,
@@ -332,7 +344,7 @@ impl PersistentRegistry {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_millis() as u64;
+            .as_secs();
 
         if self.opts.encryption().is_none() {
             let dk = DataKey {
@@ -397,17 +409,27 @@ impl PersistentRegistry {
 }
 
 impl Registry {
+    #[inline]
+    pub fn encryption_algorithm(&self) -> EncryptionAlgorithm {
+        match &self {
+            Registry::Memory(r) => r.opts.encryption.algorithm(),
+            Registry::Persistent(r) => r.opts.encryption.algorithm(),
+        }
+    }
+
     /// Opens key registry if it exists, otherwise it'll create key registry
     /// and returns key registry.
     pub fn open(opts: RefCounter<RegistryOptions>) -> Result<Self> {
-        let secret = opts.encryption.secret();
-        // sanity check the encryption key length.
-        if !is_valid_key_length(secret, opts.encryption.algorithm()) {
-            #[cfg(feature = "tracing")]
-            {
-                tracing::error!(target: "key_registry", "during open registry: invalid encryption key length {}", secret.len());
+        if opts.encryption.is_some() {
+            let secret = opts.encryption.secret();
+            // sanity check the encryption key length.
+            if !is_valid_key_length(secret, opts.encryption.algorithm()) {
+                #[cfg(feature = "tracing")]
+                {
+                    tracing::error!(target: "key_registry", "during open registry: invalid encryption key length {}", secret.len());
+                }
+                return Err(Error::InvalidEncryptionKeyLength(secret.len()));
             }
-            return Err(Error::InvalidEncryptionKeyLength(secret.len()));
         }
 
         // If db is opened in InMemory mode, we don't need to write key registry to the disk.
@@ -788,7 +810,7 @@ fn store_data_key(buf: &mut BytesMut, mut dk: DataKey, opts: &RegistryOptions) -
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use super::*;
 
     use rand::RngCore;
@@ -796,7 +818,7 @@ mod test {
     use std::fs;
     use std::path::Path;
 
-    fn get_registry_test_options<P: AsRef<Path>>(
+    pub(crate) fn get_registry_test_options<P: AsRef<Path>>(
         dir: P,
         key: Vec<u8>,
     ) -> RefCounter<RegistryOptions> {
