@@ -1,5 +1,8 @@
-use core::sync::atomic::{AtomicU32, Ordering};
-use std::path::PathBuf;
+use core::{
+    cell::Cell,
+    sync::atomic::{AtomicU32, Ordering},
+};
+use std::path::{Path, PathBuf};
 
 use fmmap::{MetaDataExt, MmapFileExt, MmapFileMut, MmapFileMutExt, Options};
 use parking_lot::RwLock;
@@ -8,21 +11,22 @@ use vpb::{
     encrypt::{Encryptor, BLOCK_SIZE},
     kvstructs::{
         bytes::{BufMut, Bytes, BytesMut},
-        Entry, Header, Key, Value, ValueExt, MAX_HEADER_SIZE,
+        Entry, EntryRef, Header, Key, Value, ValueExt, MAX_HEADER_SIZE, OP,
     },
-    DataKey,
+    DataKey, EncryptionAlgorithm,
 };
 
-use crate::{error::*, registry::Registry, ValuePointer, VALUE_LOG_HEADER_SIZE};
+use crate::{error::*, registry::Registry, SafeRead, ValuePointer, VALUE_LOG_HEADER_SIZE};
 
 const WAL_IV_SIZE: usize = 12;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct WALOptions {
-    sync_writes: bool,
-    read_only: bool,
-    enable_metrics: bool,
-    mem_table_size: u64,
+    pub sync_writes: bool,
+    pub read_only: bool,
+    pub enable_metrics: bool,
+    pub mem_table_size: u64,
+    pub save_on_drop: bool,
 }
 
 pub struct WAL {
@@ -50,6 +54,7 @@ impl WAL {
         registry: Registry,
         opts: WALOptions,
     ) -> Result<Option<Self>> {
+        let save = opts.save_on_drop;
         if !path.as_ref().exists() {
             Options::new()
                 .max_size(opts.mem_table_size * 2)
@@ -57,7 +62,9 @@ impl WAL {
                 .create_mmap_file_mut(&path)
                 .map_err(From::from)
                 .and_then(|mut mmap| {
-                    mmap.set_remove_on_drop(true);
+                    if !save {
+                        mmap.set_remove_on_drop(true);
+                    }
                     Self::bootstrap(path.as_ref().to_path_buf(), fid, registry, mmap, opts)
                         .map(Option::Some)
                 })
@@ -70,7 +77,10 @@ impl WAL {
                 .read(true)
                 .open_mmap_file_mut(&path)
                 .map_err(From::from)
-                .and_then(|mmap| {
+                .and_then(|mut mmap| {
+                    if !save {
+                        mmap.set_remove_on_drop(true);
+                    }
                     let size = mmap.len();
                     Self::open_in(path.as_ref().to_path_buf(), fid, mmap, registry, size, opts)
                 })
@@ -197,8 +207,33 @@ impl WAL {
 
     /// Iterates over log file. It doesn't not allocate new memory for every kv pair.
     /// Therefore, the kv pair is only valid for the duration of fn call.
-    pub(crate) fn iter(&self, offset: u32) -> Result<u32> {
-        todo!()
+    #[inline]
+    pub fn iter<F: FnMut(EntryRef, ValuePointer) -> Result<()>>(
+        &self,
+        mut offset: u32,
+        log_entry: F,
+    ) -> Result<u32> {
+        if offset == 0 {
+            // If offset is set to zero, let's advance past the encryption key header.
+            offset = VALUE_LOG_HEADER_SIZE as u32;
+        }
+
+        let inner = self.inner.read();
+        let iter = WALIterator {
+            reader: &inner.mmap.as_slice()[(offset as usize)..],
+            safe_reader: SafeRead {
+                kv: Box::into_raw(Box::new(vec![])),
+                record_offset: Cell::new(offset),
+            },
+            base_iv: self.base_iv.as_slice(),
+            secret: self.data_key.as_ref().map(|dk| dk.data.as_ref()),
+            path: &self.path,
+            fid: self.fid,
+            encryption_algorithm: self.registry.encryption_algorithm(),
+            start_offset: offset,
+        };
+
+        iter.valid_end_offset(log_entry)
     }
 
     pub(crate) fn read(&self, p: ValuePointer) -> Result<Vec<u8>> {
@@ -249,9 +284,8 @@ impl WAL {
                 .write_all(buf.as_ref(), offset as usize)
                 .map(|_| {
                     inner.write_at += encoded_len as u32;
-                    inner
-                        .mmap
-                        .zero_range(offset as usize, offset as usize + MAX_HEADER_SIZE);
+                    let start = inner.write_at as usize;
+                    inner.mmap.zero_range(start, start + MAX_HEADER_SIZE);
                 })
                 .map_err(From::from)
         })
@@ -290,7 +324,7 @@ impl WAL {
                 let mut ebuf = BytesMut::with_capacity(key.len() + value.len());
                 ebuf.put_slice(key);
                 ebuf.put_slice(value);
-                ebuf.encrypt_to_vec(&data_key.data, &self.generate_iv(offset), self.registry.encryption_algorithm())
+                ebuf.encrypt_to_vec(&data_key.data, &Self::generate_iv(&self.base_iv, offset), self.registry.encryption_algorithm())
                 .map(|encrypted| {
                     hash.update(&encrypted);
                     buf.put_slice(&encrypted);
@@ -325,7 +359,14 @@ impl WAL {
         let (h_len, h) = Header::decode(src);
         let kv = &src[h_len..];
 
-        let kv: Bytes = self.decrypt_kv(kv, offset)?.into();
+        let kv: Bytes = Self::decrypt_kv(
+            kv,
+            self.data_key.as_ref().map(|dk| dk.data.as_ref()),
+            &self.base_iv,
+            offset,
+            self.registry.encryption_algorithm(),
+        )?
+        .into();
 
         let key_len = h.get_key_len() as usize;
         let val_len = h.get_value_len() as usize;
@@ -339,7 +380,7 @@ impl WAL {
         Ok(ent)
     }
 
-    fn done_writing(&self, offset: u32) -> Result<()> {
+    pub(crate) fn done_writing(&self, offset: u32) -> Result<()> {
         if self.opt.sync_writes {
             self.inner.read().mmap.flush().map_err(|e| {
                 #[cfg(feature = "tracing")]
@@ -364,16 +405,19 @@ impl WAL {
     }
 
     #[inline]
-    fn decrypt_kv(&self, src: &[u8], offset: u32) -> Result<Vec<u8>> {
-        src.encrypt_to_vec(
-            self.data_key
-                .as_ref()
-                .map(|dk| dk.data.as_ref())
-                .unwrap_or(&[]),
-            &self.generate_iv(offset),
-            self.registry.encryption_algorithm(),
-        )
-        .map_err(From::from)
+    pub(crate) fn decrypt_kv(
+        src: &[u8],
+        secret: Option<&[u8]>,
+        base_iv: &[u8],
+        offset: u32,
+        algo: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>> {
+        match secret {
+            Some(secret) => src
+                .encrypt_to_vec(secret, &Self::generate_iv(base_iv, offset), algo)
+                .map_err(From::from),
+            None => Ok(src.to_vec()),
+        }
     }
 
     /// Returns datakey's ID.
@@ -385,13 +429,146 @@ impl WAL {
 
     /// Generates IV by appending given offset with the base IV.
     #[inline]
-    fn generate_iv(&self, offset: u32) -> [u8; BLOCK_SIZE] {
+    fn generate_iv(base_iv: &[u8], offset: u32) -> [u8; BLOCK_SIZE] {
         let mut iv = [0u8; BLOCK_SIZE];
         // base_iv is of 12 bytes.
-        iv[..WAL_IV_SIZE].copy_from_slice(&self.base_iv);
+        iv[..WAL_IV_SIZE].copy_from_slice(base_iv);
         // remaining 4 bytes is obtained from offset.
         iv[WAL_IV_SIZE..].copy_from_slice(&offset.to_be_bytes());
         iv
+    }
+}
+
+pub struct WALIterator<'a> {
+    reader: &'a [u8],
+    safe_reader: SafeRead,
+    base_iv: &'a [u8],
+    secret: Option<&'a [u8]>,
+    encryption_algorithm: EncryptionAlgorithm,
+    start_offset: u32,
+    path: &'a Path,
+    fid: u32,
+}
+
+impl<'a> WALIterator<'a> {
+    #[inline]
+    pub(crate) fn next(&self, cursor: usize) -> Result<Option<(usize, EntryRef)>> {
+        match self.safe_reader.read_entry(
+            &self.reader[cursor..],
+            self.base_iv,
+            self.secret,
+            self.encryption_algorithm,
+        ) {
+            Ok(ent) => {
+                if ent.1.get_key().is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(ent))
+                }
+            }
+            Err(err) => match err {
+                Error::Truncate => Ok(None),
+                Error::EOF => Ok(None),
+                err => Err(err),
+            },
+        }
+    }
+
+    /// Iterates over WAL file. It doesn't not allocate new memory for every kv pair.
+    /// Therefore, the kv pair is only valid for the duration of fn call.
+    #[inline]
+    pub(crate) fn valid_end_offset<F: FnMut(EntryRef, ValuePointer) -> Result<()>>(
+        self,
+        mut log_entry: F,
+    ) -> Result<u32> {
+        // For now, read directly from file, because it allows
+        let mut valid_end_offset = self.start_offset;
+        let mut last_commit = 0;
+        let mut vptrs = Vec::new();
+        let mut entries = Vec::new();
+        let fid = self.fid;
+        let mut readed = 0;
+
+        while let Some((bytes_read, ent)) = self.next(readed)? {
+            readed += bytes_read;
+
+            let vp = ValuePointer {
+                fid,
+                len: ent.get_offset(),
+                offset: ent.get_offset(),
+            };
+
+            let ent_meta = ent.get_meta();
+            let meta_txn = ent_meta & OP::BIT_TXN.bits();
+            let meta_fin_txn = ent_meta & OP::BIT_FIN_TXN.bits();
+
+            if meta_txn > 0 {
+                let txn_ts = ent.parse_timestamp();
+                if last_commit == 0 {
+                    last_commit = txn_ts;
+                }
+                if last_commit != txn_ts {
+                    break;
+                }
+
+                entries.push(ent);
+                vptrs.push(vp);
+            } else if meta_fin_txn > 0 {
+                let vr = ent.val.parse_value();
+                if vr.len() < 8 {
+                    break;
+                }
+
+                let txn_ts = u64::from_be_bytes((&vr[..8]).try_into().unwrap());
+                if last_commit != txn_ts {
+                    break;
+                }
+
+                // Got the end of txn. Now we can store them.
+                last_commit = 0;
+                valid_end_offset = ent.get_offset();
+
+                for (i, e) in entries.iter().enumerate() {
+                    let vp = vptrs[i];
+                    if let Err(err) = log_entry(*e, vp) {
+                        match err {
+                            Error::Stop => break,
+                            err => {
+                                #[cfg(feature = "tracing")]
+                                {
+                                    tracing::error!(target: "wal", err = %err, "Iteration function. Path={}.", self.path.display());
+                                }
+                                return Err(err);
+                            }
+                        }
+                    }
+                }
+                entries.clear();
+                vptrs.clear();
+            } else {
+                if last_commit != 0 {
+                    // This is most likely an entry which was moved as part of GC.
+                    // We shouldn't get this entry in the middle of a transaction.
+                    break;
+                }
+
+                valid_end_offset = ent.get_offset();
+
+                if let Err(err) = log_entry(ent, vp) {
+                    match err {
+                        Error::Stop => break,
+                        err => {
+                            #[cfg(feature = "tracing")]
+                            {
+                                tracing::error!(target: "wal", err = %err, "Iteration function. Path={}.", self.path.display());
+                            }
+                            return Err(err);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(valid_end_offset)
     }
 }
 
@@ -404,6 +581,7 @@ mod test {
     use std::fs;
     use std::sync::atomic::AtomicUsize;
     use vpb::prost::Message;
+    use vpb::Encryption;
 
     const MEM_TABLE_SIZE: u64 = 64 << 20; // 64 MB
 
@@ -413,12 +591,13 @@ mod test {
         dir
     }
 
-    fn get_test_wal_options() -> WALOptions {
+    fn get_test_wal_options(save_on_drop: bool) -> WALOptions {
         WALOptions {
             sync_writes: true,
             read_only: false,
             enable_metrics: false,
             mem_table_size: MEM_TABLE_SIZE,
+            save_on_drop,
         }
     }
 
@@ -435,7 +614,7 @@ mod test {
         let dd = dir.clone();
         defer!(fs::remove_dir_all(dd).unwrap(););
 
-        let opts = get_registry_test_options(&dir.clone(), ek.to_vec());
+        let opts = get_registry_test_options(&dir.clone(), Encryption::aes(ek.to_vec()));
         let kr = Registry::open(opts).unwrap();
 
         WAL::open(
@@ -443,7 +622,7 @@ mod test {
             0,
             0,
             kr,
-            get_test_wal_options(),
+            get_test_wal_options(false),
         )
         .unwrap()
         .unwrap();
@@ -461,7 +640,7 @@ mod test {
 
     fn wal_valid_end_offset(encrypt: bool, suffix: usize) {
         let ctr: AtomicUsize = AtomicUsize::new(0);
-        const N: usize = 100;
+        const N: usize = 10;
 
         let mut dir = std::env::temp_dir();
         dir.push(format!("vela-test-wal-valid_end_offset_{}", suffix));
@@ -472,25 +651,26 @@ mod test {
             let mut ek: [u8; 32] = Default::default();
             let mut rng = rand::thread_rng();
             rng.fill_bytes(&mut ek);
-            ek.to_vec()
+            Encryption::aes(ek.to_vec())
         } else {
-            vec![]
+            Encryption::new()
         };
         let opts = get_registry_test_options(&dir, ek);
         let dir = opts.dir().clone();
         let kr = Registry::open(opts).unwrap();
 
-        let mut w = WAL::open(
+        let w = WAL::open(
             get_wal_pathbuf(dir.clone(), suffix.to_string().as_str()),
             0,
             0,
             kr.clone(),
-            get_test_wal_options(),
+            get_test_wal_options(true),
         )
         .unwrap()
         .unwrap();
 
         let mut buf = BytesMut::new();
+
         for i in 0..N {
             let ent = Entry::new_from_kv(
                 Key::from(i.to_string().encode_to_vec()),
@@ -500,26 +680,28 @@ mod test {
         }
         drop(w);
 
-        let mut w = WAL::open(
+        let w = WAL::open(
             get_wal_pathbuf(dir, suffix.to_string().as_str()),
             0,
             0,
             kr,
-            get_test_wal_options(),
+            get_test_wal_options(false),
         )
         .unwrap()
         .unwrap();
 
-        // let mut iter = w.iter(0);
-        // let _ = iter
-        //     .valid_end_offset(|e, _vp| {
-        //         let i = ctr.fetch_add(1, Ordering::Relaxed);
-        //         assert_eq!(e.key.key().as_slice(), i.to_string().encode_to_vec().as_slice());
-        //         assert_eq!(e.val.value(), i.to_string().encode_to_vec().as_slice());
-        //         Ok(())
-        //     })
-        //     .unwrap();
-        // assert_eq!(ctr.load(Ordering::Relaxed), N);
+        w.iter(0, |e, _vp| {
+            let i = ctr.fetch_add(1, Ordering::Relaxed);
+            assert_eq!(e.key.as_slice(), i.to_string().encode_to_vec().as_slice());
+            assert_eq!(
+                e.val.parse_value(),
+                i.to_string().encode_to_vec().as_slice()
+            );
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(ctr.load(Ordering::Relaxed), N);
     }
 
     #[test]
@@ -539,7 +721,7 @@ mod test {
         fs::create_dir(dir.clone()).unwrap();
         defer!(fs::remove_dir_all(&dir).unwrap(););
 
-        let opts = get_registry_test_options(&dir, ek.to_vec());
+        let opts = get_registry_test_options(&dir, Encryption::aes(ek.to_vec()));
         let dir = opts.dir().clone();
         let kr = Registry::open(opts).unwrap();
 
@@ -548,7 +730,7 @@ mod test {
             0,
             0,
             kr,
-            get_test_wal_options(),
+            get_test_wal_options(false),
         )
         .unwrap()
         .unwrap();

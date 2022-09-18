@@ -820,14 +820,14 @@ pub(crate) mod test {
 
     pub(crate) fn get_registry_test_options<P: AsRef<Path>>(
         dir: P,
-        key: Vec<u8>,
+        encryption: Encryption,
     ) -> RefCounter<RegistryOptions> {
         RegistryOptions {
             dir: dir.as_ref().to_path_buf(),
             in_memory: false,
             read_only: false,
             encryption_key_rotation_duration: Default::default(),
-            encryption: Encryption::aes(key),
+            encryption,
         }
         .into()
     }
@@ -858,7 +858,7 @@ pub(crate) mod test {
         fs::create_dir(dir.clone()).unwrap();
         defer!(fs::remove_dir_all(&dir).unwrap(););
 
-        let opt = get_registry_test_options(&dir, ek.to_vec());
+        let opt = get_registry_test_options(&dir, Encryption::aes(ek.to_vec()));
 
         let kr = Registry::open(opt.clone()).unwrap();
         let dk = kr.latest_data_key().unwrap();
@@ -899,7 +899,7 @@ pub(crate) mod test {
         fs::create_dir(dir.clone()).unwrap();
         defer!(fs::remove_dir_all(&dir).unwrap(););
 
-        let opt = get_registry_test_options(&dir, ek.to_vec());
+        let opt = get_registry_test_options(&dir, Encryption::aes(ek.to_vec()));
 
         let kr = Registry::open(opt.clone()).unwrap();
         let _ = kr.latest_data_key().unwrap();
@@ -943,7 +943,7 @@ pub(crate) mod test {
         fs::create_dir(dir.clone()).unwrap();
         defer!(fs::remove_dir_all(&dir).unwrap(););
 
-        let opt = get_registry_test_options(&dir, ek.to_vec());
+        let opt = get_registry_test_options(&dir, Encryption::aes(ek.to_vec()));
 
         let kr = Registry::open(opt.clone()).unwrap();
         drop(kr);
@@ -955,7 +955,7 @@ pub(crate) mod test {
         let mut ek: [u8; 32] = Default::default();
         let mut rng = rand::thread_rng();
         rng.fill_bytes(&mut ek);
-        let opt = get_registry_test_options(&dir, ek.to_vec());
+        let opt = get_registry_test_options(&dir, Encryption::aes(ek.to_vec()));
 
         assert!(Registry::open(opt).is_err());
     }
@@ -972,7 +972,7 @@ pub(crate) mod test {
         fs::create_dir(dir.clone()).unwrap();
         defer!(fs::remove_dir_all(&dir).unwrap(););
 
-        let opt = get_registry_test_options(&dir, ek.to_vec());
+        let opt = get_registry_test_options(&dir, Encryption::aes(ek.to_vec()));
 
         let kr = Registry::open(opt.clone()).unwrap();
 

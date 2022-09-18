@@ -13,6 +13,8 @@ pub enum Error {
     #[cfg(feature = "std")]
     IO(std::io::Error),
     ChecksumMismatch,
+    Truncate,
+    Stop,
     EOF,
 }
 
@@ -59,6 +61,8 @@ impl core::fmt::Display for Error {
             Error::InvalidDataKeyID(e) => write!(f, "invalid data key id {}", e),
             Error::IO(e) => write!(f, "io: {}", e),
             Error::EOF => write!(f, "eof"),
+            Error::Truncate => write!(f, "do truncate"),
+            Error::Stop => write!(f, "stop iteration"),
         }
     }
 }

@@ -130,31 +130,29 @@ impl Header {
 
     /// Decode Header from Cursor<>, returns Header and number of bytes read
     #[cfg(feature = "std")]
-    pub fn decode_reader(
-        reader: &mut impl ByteReader,
-        hash_buf: &mut BytesMut,
-    ) -> std::io::Result<(usize, Self)> {
-        use crate::binary_read_and_put_uvarint;
+    pub fn decode_from_reader(reader: &mut impl std::io::Read) -> std::io::Result<(usize, Self)> {
+        use crate::{read_byte, read_uvarint};
 
-        let start = reader.position();
-        let meta = reader.read_byte()?;
-        hash_buf.put_u8(meta);
-        let user_meta = reader.read_byte()?;
-        hash_buf.put_u8(user_meta);
+        let mut h_size = 2;
+        let meta = read_byte(reader)?;
+        let user_meta = read_byte(reader)?;
+        let (klen, bytes_read) = read_uvarint(reader)?;
+        h_size += bytes_read;
+        let (vlen, bytes_read) = read_uvarint(reader)?;
+        h_size += bytes_read;
 
-        let k_len = binary_read_and_put_uvarint(reader, hash_buf)?;
-        let v_len = binary_read_and_put_uvarint(reader, hash_buf)?;
-        let expires_at = binary_read_and_put_uvarint(reader, hash_buf)?;
-        let h_len = reader.position() - start;
+        let (expires_at, bytes_read) = read_uvarint(reader)?;
+        h_size += bytes_read;
+
         let h = Header {
-            k_len: k_len as u32,
-            v_len: v_len as u32,
+            k_len: klen as u32,
+            v_len: vlen as u32,
             expires_at,
             meta,
             user_meta,
         };
 
-        Ok((h_len as usize, h))
+        Ok((h_size, h))
     }
 
     /// update the data of the header according to the provided byte slice.
@@ -240,45 +238,5 @@ impl Header {
     pub fn set_expires_at(mut self, expires_at: u64) -> Self {
         self.expires_at = expires_at;
         self
-    }
-}
-
-cfg_std! {
-    use std::io::Read;
-
-    ///
-    pub trait ByteReader {
-        /// Read one byte and advance the current position
-        fn read_byte(&mut self) -> std::io::Result<u8>;
-        /// Returns the current position
-        fn position(&self) -> u64;
-    }
-
-    macro_rules! impl_byte_reader_for_cursor {
-        ($($ty: ty),+ $(,)?) => {
-            $(
-                impl ByteReader for std::io::Cursor<$ty> {
-                    #[inline]
-                    fn read_byte(&mut self) -> std::io::Result<u8> {
-                        let mut buf = [0; 1];
-                        self.read_exact(&mut buf).map(|_| buf[0])
-                    }
-
-                    #[inline]
-                    fn position(&self) -> u64 {
-                        self.position()
-                    }
-                }
-            )*
-        };
-    }
-
-    impl_byte_reader_for_cursor! {
-        Box<[u8]>,
-        &[u8],
-        &mut [u8],
-        Vec<u8>,
-        &Vec<u8>,
-        &mut Vec<u8>
     }
 }

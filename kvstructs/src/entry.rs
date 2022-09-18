@@ -1,5 +1,5 @@
-use crate::OP;
 use crate::{EncodedValue, Key, Value, ValueExt};
+use crate::{KeyExt, KeyRef, ValueRef, OP};
 
 /// Entry provides Key, Value, UserMeta and ExpiresAt. This struct can be used by
 /// the user to set data.
@@ -190,5 +190,138 @@ impl Entry {
     #[inline]
     pub fn encoded_value(&self) -> EncodedValue {
         self.val.to_encoded()
+    }
+}
+
+///
+#[derive(Debug, Copy, Clone)]
+pub struct EntryRef<'a> {
+    ///
+    pub key: KeyRef<'a>,
+    ///
+    pub val: ValueRef<'a>,
+    ///
+    pub offset: u32,
+
+    // Fields maintained internally.
+    /// length of the header
+    h_len: usize,
+    val_threshold: u64,
+}
+
+impl<'a> EntryRef<'a> {
+    /// Create a new EntryRef
+    pub fn new(
+        key: KeyRef<'a>,
+        val: ValueRef<'a>,
+        offset: u32,
+        h_len: usize,
+        val_threshold: u64,
+    ) -> Self {
+        Self {
+            key,
+            val,
+            offset,
+            h_len,
+            val_threshold,
+        }
+    }
+
+    /// Create a new EntryRef from a key and value reference.
+    /// This function uses key and value reference, hence users must
+    /// not modify key and value until the end of transaction.
+    #[inline]
+    pub fn new_from_kv(key: KeyRef<'a>, val: ValueRef<'a>) -> Self {
+        Self {
+            key,
+            val,
+            offset: 0,
+            h_len: 0,
+            val_threshold: 0,
+        }
+    }
+
+    /// Get the key
+    #[inline]
+    pub const fn get_key(&self) -> &KeyRef<'a> {
+        &self.key
+    }
+
+    /// Get the value
+    #[inline]
+    pub const fn get_value(&self) -> &ValueRef<'a> {
+        &self.val
+    }
+
+    /// Get the length of the header
+    #[inline]
+    pub const fn get_header_size(&self) -> usize {
+        self.h_len
+    }
+
+    /// Get the entry offset
+    #[inline]
+    pub const fn get_offset(&self) -> u32 {
+        self.offset
+    }
+
+    /// Get the value meta
+    #[inline]
+    pub const fn get_meta(&self) -> u8 {
+        self.val.meta
+    }
+
+    /// Get the user meta of the value
+    #[inline]
+    pub const fn get_user_meta(&self) -> u8 {
+        self.val.user_meta
+    }
+
+    /// Get the expires_at of the value
+    #[inline]
+    pub const fn get_expires_at(&self) -> u64 {
+        self.val.expires_at
+    }
+
+    /// Get the version fo the value
+    #[inline]
+    pub const fn get_version(&self) -> u64 {
+        self.val.version
+    }
+
+    /// Get the timestamp of the key
+    #[inline]
+    pub fn parse_timestamp(&self) -> u64 {
+        self.key.parse_timestamp()
+    }
+
+    /// Get the header
+    #[inline]
+    pub fn get_header(&self) -> crate::header::Header {
+        crate::header::Header {
+            k_len: self.key.len() as u32,
+            v_len: self.val.parse_value().len() as u32,
+            expires_at: self.val.get_expires_at(),
+            meta: self.val.get_meta(),
+            user_meta: self.val.get_user_meta(),
+        }
+    }
+
+    /// Get the value threshold
+    #[inline]
+    pub const fn get_value_threshold(&self) -> u64 {
+        self.val_threshold
+    }
+
+    /// Set the length of the header
+    #[inline]
+    pub fn set_header_len(&mut self, hlen: usize) {
+        self.h_len = hlen;
+    }
+
+    /// Set the offset of the entry
+    #[inline]
+    pub fn set_offset(&mut self, offset: u32) {
+        self.offset = offset as u32;
     }
 }

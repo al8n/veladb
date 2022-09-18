@@ -181,8 +181,6 @@ pub use value_mut::*;
 use crate::bytes::{BufMut, BytesMut};
 use alloc::vec::Vec;
 use bitflags::bitflags;
-#[cfg(feature = "std")]
-use header::ByteReader;
 
 const TIMESTAMP_SIZE: usize = core::mem::size_of::<u64>();
 
@@ -206,7 +204,7 @@ bitflags! {
 }
 
 #[inline]
-fn u64_big_endian(b: &[u8]) -> u64 {
+const fn u64_big_endian(b: &[u8]) -> u64 {
     (b[7] as u64)
         | ((b[6] as u64) << 8)
         | (b[5] as u64) << 16
@@ -244,6 +242,33 @@ fn binary_uvarint(buf: &[u8]) -> (u64, usize) {
         s += 7;
     }
     (0, 0)
+}
+
+#[cfg(feature = "std")]
+#[inline]
+fn read_byte<R: std::io::Read>(r: &mut R) -> std::io::Result<u8> {
+    let mut buf = [0u8];
+    r.read_exact(&mut buf).map(|_| buf[0])
+}
+
+#[cfg(feature = "std")]
+#[inline]
+fn read_uvarint<R: std::io::Read>(r: &mut R) -> std::io::Result<(u64, usize)> {
+    let mut x = 0;
+    let mut s = 0usize;
+    for idx in 0..MAX_VARINT_LEN64 {
+        let b = read_byte(r)?;
+        if b < 0x80 {
+            if idx >= MAX_VARINT_LEN64 || idx == MAX_VARINT_LEN64 - 1 && b > 1 {
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, "overflow"));
+                //overflow
+            }
+            return Ok((x | (b as u64) << s, idx + 1));
+        }
+        x |= ((b & 0x7f) as u64) << s;
+        s += 7;
+    }
+    Ok((x, MAX_VARINT_LEN64))
 }
 
 #[inline]
@@ -296,25 +321,6 @@ cfg_std! {
         fn from(of: Overflow) -> Self {
             std::io::Error::new(std::io::ErrorKind::Other, of)
         }
-    }
-
-    /// read_uvarint reads an encoded unsigned integer from r and returns it as a u64.
-    fn binary_read_and_put_uvarint(r: &mut impl ByteReader, dst: &mut BytesMut) -> std::io::Result<u64> {
-        let mut x = 0u64;
-        let mut s = 0usize;
-        for idx in 0..MAX_VARINT_LEN64 {
-            let b = r.read_byte()?;
-            dst.put_u8(b);
-            if b < 0x80 {
-                if idx == MAX_VARINT_LEN64 - 1 && b > 1 {
-                    return Err(Overflow.into());
-                }
-                return Ok(x | (b as u64) << s);
-            }
-            x |= ((b & 0x7f) as u64) << s;
-            s += 7;
-        }
-        Ok(x)
     }
 }
 
