@@ -5,8 +5,10 @@ use crate::{KeyExt, KeyRef, ValueRef, OP};
 /// the user to set data.
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Entry {
-    key: Key,
-    val: Value,
+    /// key
+    pub key: Key,
+    /// value
+    pub val: Value,
     offset: u32,
     // Fields maintained internally.
     /// length of the header

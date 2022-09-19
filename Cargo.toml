@@ -3,6 +3,7 @@ members = [
   "bable",
   "core",
   "kvstructs",
+  "skl",
   "utils",
   "vpb",
   "wisc",

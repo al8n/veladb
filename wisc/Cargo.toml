@@ -4,20 +4,21 @@ version = "0.0.0"
 edition = "2021"
 license = "Apache-2.0/MIT"
 description = "a placeholder"
+repository = "https://github.com/al8n/veladb/tree/main/wisc"
 
 [features]
 default = ["std"]
 full = ["std", "tracing/default"]
-std = ["fmmap", "parking_lot", "vpb/std", "vpb/aes-std", "rand/default", "rustix"]
+std = ["fmmap", "parking_lot", "vpb/std", "vpb/aes-std", "vela-utils/std", "rand/default", "rustix", "skl/std"]
 metrics = []
 
 [dependencies]
-bitflags = "1.3"
 fmmap = { version = "0.3", optional = true }
 lazy_static = { version = "1.4", optional = true, default-features = false }
 parking_lot = { version = "0.12", optional = true }
 rand = { version = "0.8", default-features = false }
 rustix = { version = "0.35", optional = true, features = ["fs"] }
+skl = { version = "0.3", path = "../skl", default-features = false, features = ["alloc"] }
 tracing = { version = "0.1", optional = true, default-features = false }
 vela-utils = { version = "0.1", path = "../utils", default-features = false, features = ["ref_counter"] }
 vpb = { version = "0.1", path = "../vpb", default-features = false, features = ["aes"] }

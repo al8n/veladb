@@ -1,18 +1,16 @@
 use super::*;
-use crate::{binary_search, Header, HEADER_SIZE};
+use crate::{Header, HEADER_SIZE};
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::iter::FusedIterator;
+use vela_utils::binary_search;
 use vpb::kvstructs::{
     bytes::{Bytes, BytesMut},
     iterator::SeekFrom,
     KeyExt, KeyRef, ValueExt, ValueRef,
 };
-
-#[cfg(feature = "nightly")]
-mod nightly;
 
 bitflags::bitflags! {
     pub struct Flag: u8 {

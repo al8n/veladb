@@ -14,26 +14,10 @@ pub use wal::*;
 mod vlog;
 pub use vlog::*;
 
-pub mod metrics;
+mod mem_table;
+pub use mem_table::*;
 
-bitflags::bitflags! {
-    /// Values have their first byte being byteData or byteDelete. This helps us distinguish between
-    /// a key that has never been seen and a key that has been explicitly deleted.
-    pub struct OP: u8 {
-        #[doc = "Set if the key has been deleted."]
-        const BIT_DELETE = 1 << 0;
-        #[doc = "Set if the value is NOT stored directly next to key."]
-        const BIT_VALUE_POINTER = 1 << 1;
-        #[doc = "Set if earlier versions can be discarded."]
-        const BIT_DISCARD_EARLIER_VERSIONS = 1 << 2;
-        #[doc = "Set if item shouldn't be discarded via compactions (used by merge operator)"]
-        const BIT_MERGE_ENTRY = 1 << 3;
-        #[doc = "Set if the entry is part of a txn."]
-        const BIT_TXN = 1 << 6;
-        #[doc = "Set if the entry is to indicate end of txn in value log."]
-        const BIT_FIN_TXN = 1 << 7;
-    }
-}
+pub mod metrics;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(C)]
@@ -127,6 +111,7 @@ struct SafeRead {
 }
 
 impl SafeRead {
+    /// Read from the read buffer, return the entry and num bytes read.
     #[cfg(feature = "std")]
     fn read_entry(
         &self,

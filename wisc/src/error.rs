@@ -14,6 +14,10 @@ pub enum Error {
     IO(std::io::Error),
     ChecksumMismatch,
     Truncate,
+    TruncateNeeded {
+        end_offset: u32,
+        size: u32,
+    },
     Stop,
     EOF,
 }
@@ -63,6 +67,9 @@ impl core::fmt::Display for Error {
             Error::EOF => write!(f, "eof"),
             Error::Truncate => write!(f, "do truncate"),
             Error::Stop => write!(f, "stop iteration"),
+            Error::TruncateNeeded { end_offset, size } => {
+                write!(f, "end offset: {} < size: {}", end_offset, size)
+            }
         }
     }
 }

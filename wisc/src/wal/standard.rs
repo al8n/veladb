@@ -1,12 +1,12 @@
+use crate::{error::*, registry::Registry, SafeRead, ValuePointer, VALUE_LOG_HEADER_SIZE};
 use core::{
     cell::Cell,
     sync::atomic::{AtomicU32, Ordering},
 };
-use std::path::{Path, PathBuf};
-
 use fmmap::{MetaDataExt, MmapFileExt, MmapFileMut, MmapFileMutExt, Options};
 use parking_lot::RwLock;
 use rand::{thread_rng, RngCore};
+use std::path::{Path, PathBuf};
 use vpb::{
     encrypt::{Encryptor, BLOCK_SIZE},
     kvstructs::{
@@ -15,8 +15,6 @@ use vpb::{
     },
     DataKey, EncryptionAlgorithm,
 };
-
-use crate::{error::*, registry::Registry, SafeRead, ValuePointer, VALUE_LOG_HEADER_SIZE};
 
 const WAL_IV_SIZE: usize = 12;
 
@@ -29,21 +27,31 @@ pub struct WALOptions {
     pub save_on_drop: bool,
 }
 
+/// WAL is lock-free
+///
+/// Structure of WAL:
+///
+/// ```text
+/// +----------------+------------------+------------------+
+/// | keyID(8 bytes) | baseIV(12 bytes) |     entry...     |
+/// +----------------+------------------+------------------+
+/// ```
 pub struct WAL {
-    inner: RwLock<WALInner>,
+    inner: RwLock<MmapFileMut>,
     path: PathBuf,
     fid: u32,
-    size: AtomicU32,
+    pub(crate) write_at: AtomicU32,
+    pub(crate) size: AtomicU32,
     data_key: Option<DataKey>,
     base_iv: [u8; WAL_IV_SIZE],
     registry: Registry,
     opt: WALOptions,
 }
 
-struct WALInner {
-    mmap: MmapFileMut,
-    write_at: u32,
-}
+/// Safety: the `write_at` is only accessed when inner lock is hold.
+unsafe impl Sync for WAL {}
+/// Safety: the `write_at` is only accessed when inner lock is hold.
+unsafe impl Send for WAL {}
 
 impl WAL {
     pub fn open<P: AsRef<std::path::Path>>(
@@ -110,12 +118,10 @@ impl WAL {
         // retrieve datakey.
         registry.data_key(&key_id)
             .map(|dk| Some(Self {
-                inner: RwLock::new(WALInner {
-                    mmap,
-                    write_at: VALUE_LOG_HEADER_SIZE as u32,
-                }),
+                inner: RwLock::new(mmap),
                 path,
                 fid,
+                write_at: AtomicU32::new(VALUE_LOG_HEADER_SIZE as u32),
                 size: AtomicU32::new(size as u32),
                 data_key: dk,
                 base_iv: buf[8..].try_into().unwrap(),
@@ -174,13 +180,11 @@ impl WAL {
         );
 
         Ok(Self {
-            inner: RwLock::new(WALInner {
-                mmap,
-                write_at: VALUE_LOG_HEADER_SIZE as u32,
-            }),
+            inner: RwLock::new(mmap),
             path,
             fid,
             size: AtomicU32::new(VALUE_LOG_HEADER_SIZE as u32),
+            write_at: AtomicU32::new(VALUE_LOG_HEADER_SIZE as u32),
             data_key,
             base_iv,
             registry,
@@ -188,10 +192,14 @@ impl WAL {
         })
     }
 
+    #[inline]
+    pub fn sync(&self) -> Result<()> {
+        self.inner.read().flush().map_err(From::from)
+    }
+
     pub fn truncate(&self, end: u64) -> Result<()> {
         let mut inner = self.inner.write();
         inner
-            .mmap
             .metadata()
             .and_then(|fi| {
                 if fi.len() == end {
@@ -199,7 +207,7 @@ impl WAL {
                 } else {
                     assert!(!self.opt.read_only);
                     self.size.store(end as u32, Ordering::SeqCst);
-                    inner.mmap.truncate(end)
+                    inner.truncate(end)
                 }
             })
             .map_err(From::from)
@@ -220,7 +228,7 @@ impl WAL {
 
         let inner = self.inner.read();
         let iter = WALIterator {
-            reader: &inner.mmap.as_slice()[(offset as usize)..],
+            reader: &inner.as_slice()[(offset as usize)..],
             safe_reader: SafeRead {
                 kv: Box::into_raw(Box::new(vec![])),
                 record_offset: Cell::new(offset),
@@ -243,7 +251,7 @@ impl WAL {
         // 4GB, which overflows the uint32 during conversion to make the size 0,
         // causing the read to fail with ErrEOF.
         let inner = self.inner.read();
-        let sz = inner.mmap.len() as u64;
+        let sz = inner.len() as u64;
         let val_sz = p.len as u64;
         let self_sz = self.size.load(Ordering::SeqCst) as u64;
 
@@ -260,7 +268,7 @@ impl WAL {
             Err(Error::EOF)
         } else {
             let offset = offset as usize;
-            let buf = inner.mmap.as_slice()[offset..offset + val_sz as usize].to_vec();
+            let buf = inner.as_slice()[offset..offset + val_sz as usize].to_vec();
             num_bytes_read = val_sz;
             #[cfg(feature = "metrics")]
             {
@@ -277,15 +285,15 @@ impl WAL {
     pub(crate) fn write_entry(&self, buf: &mut BytesMut, ent: &Entry) -> Result<()> {
         buf.clear();
         let mut inner = self.inner.write();
-        let offset = inner.write_at;
+        let offset = self.write_at.load(Ordering::Acquire);
         self.encode_entry(buf, ent, offset).and_then(|encoded_len| {
             inner
-                .mmap
                 .write_all(buf.as_ref(), offset as usize)
                 .map(|_| {
-                    inner.write_at += encoded_len as u32;
-                    let start = inner.write_at as usize;
-                    inner.mmap.zero_range(start, start + MAX_HEADER_SIZE);
+                    let new_write_at = encoded_len as u32 + offset;
+                    self.write_at.store(new_write_at, Ordering::Release);
+                    let start = new_write_at as usize;
+                    inner.zero_range(start, start + MAX_HEADER_SIZE);
                 })
                 .map_err(From::from)
         })
@@ -382,7 +390,7 @@ impl WAL {
 
     pub(crate) fn done_writing(&self, offset: u32) -> Result<()> {
         if self.opt.sync_writes {
-            self.inner.read().mmap.flush().map_err(|e| {
+            self.inner.read().flush().map_err(|e| {
                 #[cfg(feature = "tracing")]
                 {
                     tracing::error!(target: "wal", err=%e, "unable to sync value log");
