@@ -49,6 +49,157 @@ where
     i
 }
 
+struct LessSwap<'a, T, L> {
+    data: &'a mut [T],
+    less: L,
+}
+
+struct InmutableLessSwap<'a, T, L> {
+    data: &'a [T],
+    less: L,
+}
+
+impl<'a, T, L> IndexSort for InmutableLessSwap<'a, T, L>
+where
+    L: Fn(usize, usize) -> bool,
+{
+    fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    fn swap(&mut self, _i: usize, _j: usize) {
+        unreachable!()
+    }
+
+    fn less(&self, i: usize, j: usize) -> bool {
+        (self.less)(i, j)
+    }
+}
+
+impl<'a, T, L> IndexSort for LessSwap<'a, T, L>
+where
+    L: Fn(usize, usize) -> bool,
+{
+    fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    fn swap(&mut self, i: usize, j: usize) {
+        self.data.swap(i, j);
+    }
+
+    fn less(&self, i: usize, j: usize) -> bool {
+        (self.less)(i, j)
+    }
+}
+
+/// Golang's `sort.Slice`, `sort.SliceStable` and `sort.SliceIsSorted` in Rust
+pub trait SliceSortExt {
+    /// Item
+    type Item;
+
+    /// Slice sorts the slice x given the provided less function.
+    ///
+    /// The sort is not guaranteed to be stable: equal elements
+    /// may be reversed from their original order.
+    /// For a stable sort, use `slice_stable`.
+    #[inline]
+    fn slice<L>(data: &mut [Self::Item], less: L)
+    where
+        L: Fn(usize, usize) -> bool,
+    {
+        let mut sorter = LessSwap { data, less };
+        sorter.sort()
+    }
+
+    /// Sorts the slice data using the provided less
+    /// function, keeping equal elements in their original order.
+    #[inline]
+    fn slice_stable<L>(data: &mut [Self::Item], less: L)
+    where
+        L: Fn(usize, usize) -> bool,
+    {
+        let mut sorter = LessSwap { data, less };
+        sorter.sort_stable()
+    }
+
+    /// Returns whether the slice x is sorted according to the provided less function.
+    #[inline]
+    fn slice_is_sorted<L>(data: &[Self::Item], less: L) -> bool
+    where
+        L: Fn(usize, usize) -> bool,
+    {
+        let sorter = InmutableLessSwap { data, less };
+        sorter.is_sorted()
+    }
+}
+
+impl<T> SliceSortExt for T {
+    type Item = T;
+}
+
+/// Slice sorts the slice x given the provided less function.
+///
+/// The sort is not guaranteed to be stable: equal elements
+/// may be reversed from their original order.
+/// For a stable sort, use `slice_stable`.
+#[inline]
+pub fn slice<T, L>(data: &mut [T], less: L)
+where
+    L: Fn(usize, usize) -> bool,
+{
+    let mut sorter = LessSwap { data, less };
+    sorter.sort()
+}
+
+/// Sorts the slice data using the provided less
+/// function, keeping equal elements in their original order.
+#[inline]
+pub fn slice_stable<T, L>(data: &mut [T], less: L)
+where
+    L: Fn(usize, usize) -> bool,
+{
+    let mut sorter = LessSwap { data, less };
+    sorter.sort_stable()
+}
+
+/// Returns whether the slice x is sorted according to the provided less function.
+#[inline]
+pub fn slice_is_sorted<T, L>(data: &[T], less: L) -> bool
+where
+    L: Fn(usize, usize) -> bool,
+{
+    let sorter = InmutableLessSwap { data, less };
+    sorter.is_sorted()
+}
+
+/// Sort in reverse helper structure
+pub struct Reverse<'a, T>(&'a mut T);
+
+impl<'a, T: IndexSort> Reverse<'a, T> {
+    pub fn new(t: &'a mut T) -> Self {
+        Reverse(t)
+    }
+
+    pub fn into_inner(self) -> &'a mut T {
+        self.0
+    }
+}
+
+impl<'a, T: IndexSort> IndexSort for Reverse<'a, T> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn swap(&mut self, i: usize, j: usize) {
+        self.0.swap(i, j);
+    }
+
+    fn less(&self, i: usize, j: usize) -> bool {
+        self.0.less(j, i)
+    }
+}
+
 #[allow(clippy::len_without_is_empty)]
 pub trait IndexSort {
     /// Len is the number of elements in the collection.
@@ -73,6 +224,7 @@ pub trait IndexSort {
     /// Sort sorts data.
     /// It makes one call to data.Len to determine n and O(n*log(n)) calls to
     /// data.Less and data.Swap. The sort is not guaranteed to be stable.
+    #[inline]
     fn sort(&mut self)
     where
         Self: Sized,
@@ -112,12 +264,34 @@ pub trait IndexSort {
     ///
     /// It makes one call to data.Len to determine n, O(n*log(n)) calls to
     /// data.Less and O(n*log(n)*log(n)) calls to data.Swap.
+    #[inline]
     fn sort_stable(&mut self)
     where
         Self: Sized,
     {
         let n = self.len();
         stable(self, n);
+    }
+
+    /// Returns whether the data is sorted.
+    #[inline]
+    fn is_sorted(&self) -> bool {
+        let n = self.len();
+        for i in (1..n).rev() {
+            if self.less(i, i - 1) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Returns the reverse order for data.
+    #[inline]
+    fn reverse(&mut self) -> Reverse<Self>
+    where
+        Self: Sized,
+    {
+        Reverse(self)
     }
 }
 
