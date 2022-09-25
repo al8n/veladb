@@ -230,3 +230,20 @@ fn open_trunc_file<P: AsRef<std::path::Path>>(
         .access_mode(0o600)
         .open(filename)
 }
+
+#[cfg(feature = "std")]
+pub fn is_deleted_or_expired(meta: u8, expires_at: u64) -> bool {
+    if (meta & bable::kvstructs::OP::BIT_DELETE.bits()) > 0 {
+        return true;
+    }
+
+    if expires_at == 0 {
+        return false;
+    }
+
+    expires_at
+        <= std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+}

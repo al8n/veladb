@@ -28,6 +28,8 @@ pub mod cache;
 
 pub mod error;
 
+pub use stretto::Histogram;
+
 mod table;
 pub use table::*;
 

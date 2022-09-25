@@ -3,6 +3,8 @@ mod standard;
 #[cfg(feature = "std")]
 pub use standard::*;
 
+use super::error::*;
+
 const VALUE_LOG_FILE_EXTENSION: &str = "vlog";
 
 /// Size of vlog header.

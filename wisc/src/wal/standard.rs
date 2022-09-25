@@ -38,7 +38,7 @@ pub struct WALOptions {
 /// ```
 pub struct WAL {
     inner: RwLock<MmapFileMut>,
-    path: PathBuf,
+    pub(crate) path: PathBuf,
     fid: u32,
     pub(crate) write_at: AtomicU32,
     pub(crate) size: AtomicU32,
