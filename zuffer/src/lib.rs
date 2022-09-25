@@ -163,7 +163,7 @@ impl Zuffer {
             mmap_file,
             auto_mmap_meta: None,
             persistent: true,
-            tag: "",
+            tag: Self::DEFAULT_TAG,
         })
     }
 
@@ -186,6 +186,7 @@ impl Zuffer {
         })
     }
 
+    #[inline]
     fn new_buffer_file(path: PathBuf, mut capacity: usize) -> Result<Zuffer, Error> {
         if capacity < Self::DEFAULT_CAPACITY {
             capacity = Self::DEFAULT_CAPACITY;
@@ -207,7 +208,7 @@ impl Zuffer {
             mmap_file,
             auto_mmap_meta: None,
             persistent: false,
-            tag: "",
+            tag: Self::DEFAULT_TAG,
         })
     }
 
@@ -234,47 +235,67 @@ impl Zuffer {
         self
     }
 
-    ///
+    /// Set the maximum size for the buffer.
+    #[inline]
     pub fn with_max_size(mut self, size: usize) -> Self {
         self.max_size = Some(size);
         self
     }
 
     /// Returns if the buffer is empty
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.offset.load(Ordering::SeqCst) == self.start_offset()
     }
 
     /// Returns the buffer start offset
+    #[inline]
     pub fn start_offset(&self) -> i64 {
         self.padding
     }
 
+    /// Returns the tag of the buffer
+    #[inline]
+    pub fn tag(&self) -> &'static str {
+        self.tag
+    }
+
+    /// Set the tag for the buffer
+    #[inline]
+    pub fn set_tag(&mut self, tag: &'static str) {
+        self.tag = tag;
+    }
+
     /// Returns the number of bytes written to the buffer so far
     /// plus the padding at the start of the buffer.
+    #[inline]
     pub fn len_with_padding(&self) -> usize {
         self.offset.load(Ordering::SeqCst) as usize
     }
 
     /// Returns the number of bytes written to the buffer so far
     /// (without the padding).
+    #[inline]
     pub fn len_without_padding(&self) -> usize {
         (self.offset.load(Ordering::SeqCst) - self.padding) as usize
     }
 
     /// Returns all the written bytes as a slice
+    #[inline]
     pub fn bytes(&self) -> &[u8] {
         let off = self.offset.load(Ordering::SeqCst) as usize;
         &self.mmap_file.as_slice()[self.padding as usize..off]
     }
 
     /// Returns all the written bytes as a mutable slice
+    #[inline]
     pub fn bytes_mut(&mut self) -> &mut [u8] {
         let off = self.offset.load(Ordering::SeqCst) as usize;
         &mut self.mmap_file.as_mut_slice()[self.padding as usize..off]
     }
 
     /// Returns the underlying data in range `[offset..current_size - offset]`
+    #[inline]
     pub fn data(&self, offset: usize) -> Result<&[u8], Error> {
         if offset > self.cur_size {
             return Err(Error::Overflow(offset, self.cur_size));
@@ -283,6 +304,7 @@ impl Zuffer {
     }
 
     /// Returns the mutable underlying data in range `[offset..current_size - offset]`
+    #[inline]
     pub fn data_mut(&mut self, offset: usize) -> Result<&mut [u8], Error> {
         if offset > self.cur_size {
             return Err(Error::Overflow(offset, self.cur_size));
@@ -372,6 +394,7 @@ impl Zuffer {
     /// # Warning:
     /// Allocate is not thread-safe. The byte slice returned MUST be used before
     /// further calls to Zuffer.
+    #[inline]
     pub fn allocate(&mut self, n: usize) -> Result<&mut [u8], Error> {
         self.grow(n).map(|_| {
             let off = self.offset.fetch_add(n as i64, Ordering::SeqCst);
@@ -381,6 +404,7 @@ impl Zuffer {
 
     /// `allocate_offset` works the same way as allocate, but instead of returning a byte slice, it returns
     /// the offset of the allocation.
+    #[inline]
     pub fn allocate_offset(&mut self, n: usize) -> Result<usize, Error> {
         self.grow(n)
             .map(|_| self.offset.fetch_add(n as i64, Ordering::SeqCst) as usize)
@@ -390,6 +414,7 @@ impl Zuffer {
     /// hence returning the slice of size sz. This can be used to allocate a lot of small buffers into
     /// this big buffer.
     /// Note that `slice_allocate` should NOT be mixed with normal calls to `write`.
+    #[inline]
     pub fn slice_allocate(&mut self, size: usize) -> Result<&mut [u8], Error> {
         self.grow(U32_SIZE + size).and_then(|_| {
             self.slice_allocate_in(size)
@@ -397,6 +422,7 @@ impl Zuffer {
         })
     }
 
+    #[inline]
     fn slice_allocate_in(&mut self, size: usize) -> Result<(), Error> {
         self.allocate(U32_SIZE).map(|buf| {
             buf.copy_from_slice(&(size as u32).to_be_bytes());
@@ -404,6 +430,7 @@ impl Zuffer {
     }
 
     /// `write` would write p bytes to the buffer.
+    #[inline]
     pub fn write(&mut self, p: &[u8]) -> Result<usize, Error> {
         let len = p.len();
         self.grow(len).map(|_| {
@@ -414,6 +441,7 @@ impl Zuffer {
     }
 
     /// Write all bytes to the buffer
+    #[inline]
     pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
         self.slice_allocate(bytes.len()).map(|dst| {
             dst.copy_from_slice(bytes);
@@ -421,6 +449,7 @@ impl Zuffer {
     }
 
     /// `reset` would reset the buffer to be reused.
+    #[inline]
     pub fn reset(&self) {
         self.offset.store(self.start_offset(), Ordering::SeqCst)
     }
@@ -525,7 +554,8 @@ impl Zuffer {
         Ok(())
     }
 
-    fn sort_slice<L>(&mut self, less: L) -> Result<(), Error>
+    /// Sort the buffer
+    pub fn sort_slice<L>(&mut self, less: L) -> Result<(), Error>
     where
         L: Fn(&[u8], &[u8]) -> bool,
     {
@@ -536,7 +566,8 @@ impl Zuffer {
         )
     }
 
-    fn sort_slice_between<L>(&mut self, start: i64, end: i64, less: L) -> Result<(), Error>
+    /// Sort the buffer between the given offsets
+    pub fn sort_slice_between<L>(&mut self, start: i64, end: i64, less: L) -> Result<(), Error>
     where
         L: Fn(&[u8], &[u8]) -> bool,
     {
@@ -732,8 +763,7 @@ fn raw_slice(buf: &[u8]) -> &[u8] {
 
 #[inline]
 fn temp_file(dir: impl AsRef<Path>) -> impl AsRef<Path> {
-    let mut dir = dir.as_ref().to_path_buf();
-    dir.push(
+    let mut dir = dir.as_ref().to_path_buf().join(
         thread_rng()
             .sample_iter(&Alphanumeric)
             .take(TEMP_FILE_NAME_LEN)
@@ -746,9 +776,8 @@ fn temp_file(dir: impl AsRef<Path>) -> impl AsRef<Path> {
 
 #[cfg(test)]
 mod tests {
-    use rand::RngCore;
-
     use super::*;
+    use rand::RngCore;
 
     fn new_test_buffers(capacity: usize) -> Vec<Zuffer> {
         vec![

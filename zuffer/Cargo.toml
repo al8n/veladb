@@ -1,6 +1,6 @@
 [package]
 name = "zuffer"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 repository = "https://github.com/al8n/veladb/tree/main/zuffer"
 description = "A mmap file based buffer implementation."
@@ -16,7 +16,7 @@ std = []
 fmmap = "0.3"
 thiserror = "1"
 rand = "0.8"
-indexsort = "*"
+indexsort = "0.0.1"
 
 [dev-dependencies]
 criterion = "0.4"
