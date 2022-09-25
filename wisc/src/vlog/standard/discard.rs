@@ -1,7 +1,11 @@
-use fmmap::{MmapFileExt, MmapFileMut, MmapFileMutExt};
+use crate::error::*;
+use fmmap::{MmapFileExt, MmapFileMut, MmapFileMutExt, Options};
 use indexsort::IndexSort;
 use parking_lot::Mutex;
 use vela_utils::ref_counter::RefCounter;
+
+const DISCARD_FILE_NAME: &'static str = "DISCARD";
+const DISCARD_FILE_EXTENSION: &'static str = "discard";
 
 /// Keeps track of the amount of data that could be discarded for
 /// a given logfile.
@@ -41,6 +45,38 @@ impl IndexSort for Inner {
 
 impl Inner {
     #[inline]
+    fn new(mmap: MmapFileMut, exists: bool) -> Self {
+        let mut this = Self {
+            mmap,
+            next_empty_slot: 0,
+        };
+
+        if !exists {
+            this.zero_out();
+        }
+
+        for slot in 0..this.max_slot() {
+            if this.get(16 * slot) == 0 {
+                this.next_empty_slot = slot;
+                break;
+            }
+        }
+
+        this.sort();
+
+        #[cfg(feature = "tracing")]
+        {
+            tracing::info!(
+                target: "discard_stats",
+                "discard stats next_empty_slot: {}",
+                this.next_empty_slot
+            );
+        }
+
+        this
+    }
+
+    #[inline]
     fn set(&mut self, offset: usize, val: u64) {
         self.mmap
             .slice_mut(offset, offset + 8)
@@ -74,6 +110,29 @@ impl Inner {
 }
 
 impl DiscardStats {
+    pub fn new(value_dir: impl AsRef<std::path::Path>) -> Result<Self> {
+        let mut fname = value_dir.as_ref().join(DISCARD_FILE_NAME);
+        fname.set_extension(DISCARD_FILE_EXTENSION);
+
+        const DISCARD_FILE_MAX_SIZE: u64 = 1 << 20; // 1GB
+
+        Options::new()
+            .read(true)
+            .create(true)
+            .write(true)
+            .max_size(DISCARD_FILE_MAX_SIZE)
+            .open_mmap_file_mut(&fname)
+            .map(|mmap| Self::new_in(mmap, fname.exists()))
+            .map_err(From::from)
+    }
+
+    #[inline(always)]
+    fn new_in(mmap: MmapFileMut, exists: bool) -> Self {
+        Self {
+            inner: RefCounter::new(Mutex::new(Inner::new(mmap, exists))),
+        }
+    }
+
     /// Update the discard stats for the given file id. If discard is
     /// 0, it would return the current value of discard for the file. If discard is
     /// < 0, it would set the current value of discard to zero for the file.
