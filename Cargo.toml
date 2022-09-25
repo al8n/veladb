@@ -7,7 +7,8 @@ members = [
   "utils",
   "vpb",
   "wisc",
-  "zallocator"
+  "zallocator",
+  "zuffer"
 ]
 
 [profile.bench]

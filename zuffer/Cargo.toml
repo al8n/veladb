@@ -1,0 +1,27 @@
+[package]
+name = "zuffer"
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/al8n/veladb/tree/main/zuffer"
+description = "A mmap file based buffer implementation."
+license = "MIT/Apache-2.0"
+keywords = ["buffer", "mmap", "file", "memmap", "memmap2"]
+category = ["data-structures"]
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+fmmap = "0.3"
+thiserror = "1"
+rand = "0.8"
+indexsort = "*"
+
+[dev-dependencies]
+criterion = "0.4"
+tempfile = "3"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
