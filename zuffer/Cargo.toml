@@ -16,7 +16,7 @@ std = []
 fmmap = "0.3"
 thiserror = "1"
 rand = "0.8"
-indexsort = "0.0.1"
+indexsort = "0.1"
 
 [dev-dependencies]
 criterion = "0.4"

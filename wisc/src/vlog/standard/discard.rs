@@ -1,6 +1,7 @@
 use fmmap::{MmapFileExt, MmapFileMut, MmapFileMutExt};
+use indexsort::IndexSort;
 use parking_lot::Mutex;
-use vela_utils::{binary_search, binary_search_by_usize, ref_counter::RefCounter};
+use vela_utils::ref_counter::RefCounter;
 
 /// Keeps track of the amount of data that could be discarded for
 /// a given logfile.
@@ -13,6 +14,29 @@ pub struct DiscardStats {
 struct Inner {
     mmap: MmapFileMut,
     next_empty_slot: usize,
+}
+
+impl IndexSort for Inner {
+    fn len(&self) -> usize {
+        self.next_empty_slot
+    }
+
+    fn less(&self, i: usize, j: usize) -> bool {
+        self.get(16 * i) < self.get(16 * j)
+    }
+
+    fn swap(&mut self, i: usize, j: usize) {
+        let src_ptr = self.mmap.as_mut_slice().as_mut_ptr();
+        let mut tmp = [0; 16];
+
+        unsafe {
+            let left_ptr = src_ptr.add(16 * i);
+            let right_ptr = src_ptr.add(16 * j);
+            core::ptr::copy_nonoverlapping(left_ptr, tmp.as_mut_ptr(), 16);
+            core::ptr::copy_nonoverlapping(right_ptr, left_ptr, 16);
+            core::ptr::copy_nonoverlapping(tmp.as_ptr(), right_ptr, 16);
+        }
+    }
 }
 
 impl Inner {
@@ -56,8 +80,7 @@ impl DiscardStats {
     pub fn update(&self, fidu: u32, discard: i64) -> i64 {
         let fid = fidu as u64;
         let mut inner = self.inner.lock();
-        let mut idx =
-            binary_search_by_usize(inner.next_empty_slot, |slot| inner.get(16 * slot) >= fid);
+        let mut idx = indexsort::search(inner.next_empty_slot, |slot| inner.get(16 * slot) >= fid);
 
         if idx < inner.next_empty_slot && inner.get(16 * idx) == fid {
             let off = idx * 16 + 8;
@@ -92,10 +115,7 @@ impl DiscardStats {
             inner.mmap.truncate(2 * cap).unwrap();
         }
         inner.zero_out();
-
-        let mut data = inner.mmap.as_mut_slice();
-
-        data.sort_unstable_by(|a, b| {});
+        inner.sort();
         discard
     }
 
