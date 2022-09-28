@@ -3,21 +3,24 @@
 pub mod error;
 
 mod registry;
-use core::cell::Cell;
-
 pub use registry::*;
 
 mod wal;
-use vpb::kvstructs::{EntryRef, Header, KeyExt, ValueRef};
 pub use wal::*;
 
 mod vlog;
 pub use vlog::*;
 
+mod oracle;
+pub use oracle::*;
+
 mod mem_table;
 pub use mem_table::*;
 
 pub mod metrics;
+
+use core::cell::Cell;
+use vpb::kvstructs::{EntryRef, Header, KeyExt, ValueRef};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(C)]

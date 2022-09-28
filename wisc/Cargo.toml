@@ -9,7 +9,7 @@ repository = "https://github.com/al8n/veladb/tree/main/wisc"
 [features]
 default = ["std"]
 full = ["std", "tracing/default"]
-std = ["fmmap", "parking_lot", "vpb/std", "vpb/aes-std", "vela-utils/std", "rand/default", "rustix", "skl/std", "crossbeam-channel", "bable/std"]
+std = ["fmmap", "parking_lot", "vpb/std", "vpb/aes-std", "vela-utils/std", "vela-utils/watermark", "rand/default", "rustix", "skl/std", "crossbeam-channel", "bable/std"]
 metrics = []
 
 [dependencies]

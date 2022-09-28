@@ -13,6 +13,20 @@ pub mod ref_counter;
 #[cfg(feature = "map_cell")]
 pub mod map_cell;
 
+#[cfg(all(
+    feature = "parking_lot",
+    feature = "crossbeam-channel",
+    feature = "arc-swap"
+))]
+pub mod watermark;
+
+#[cfg(all(
+    feature = "parking_lot",
+    feature = "crossbeam-channel",
+    feature = "arc-swap"
+))]
+pub mod closer;
+
 /// Golang `sort.Search` in Rust
 pub fn binary_search<F: FnMut(isize) -> bool>(target: isize, mut op: F) -> isize {
     // Define f(-1) == false and f(n) == true.

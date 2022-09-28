@@ -15,12 +15,20 @@ ref_counter = ["triomphe", "alloc"]
 ref_counter_std = ["triomphe/std"]
 map_cell = ["hashbrown", "atomic"]
 map_cell_std = ["atomic/std"]
+watermark = ["closer", "scopeguard", "crossbeam-utils"]
+closer = ["std", "crossbeam-channel", "wg", "parking_lot", "arc-swap"]
 alloc = []
 
 [dependencies]
+arc-swap = { version = "1.5", optional = true }
 triomphe = { version = "0.1", default-features = false, optional = true }
 hashbrown = { version = "0.12", optional = true, default-features = false }
 atomic = { version = "0.5",  default-features = false, optional = true }
+crossbeam-channel = { version = "0.5", optional = true }
+crossbeam-utils = { version = "0.8", optional = true }
+wg = { version = "0.2", optional = true }
+parking_lot = { version = "0.12", optional = true }
+scopeguard = { version = "1.1", optional = true }
 
 [package.metadata.docs.rs]
 all-features = true
