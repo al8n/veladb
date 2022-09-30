@@ -10,9 +10,9 @@ use std::{
     collections::{hash_map::Entry, HashMap},
     fs::{File, OpenOptions},
     io::{Read, Write},
-    path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
+use vela_options::KeyRegistryOptions;
 use vela_utils::ref_counter::RefCounter;
 use vpb::{
     encrypt::{is_valid_key_length, random_iv, Encryptor},
@@ -35,99 +35,6 @@ pub const REWRITE_REGISTRY_FILE_EXTENSION: &str = "krr";
 
 const SANITY_TEXT: &[u8] = b"Hello VelaDB";
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RegistryOptions {
-    dir: PathBuf,
-    in_memory: bool,
-    read_only: bool,
-    encryption_key_rotation_duration: Duration,
-    encryption: Encryption,
-}
-
-impl Default for RegistryOptions {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RegistryOptions {
-    #[inline]
-    pub fn new() -> Self {
-        Self {
-            dir: std::env::temp_dir().join("registry"),
-            in_memory: false,
-            read_only: false,
-            encryption_key_rotation_duration: Duration::from_secs(0),
-            encryption: Encryption::new(),
-        }
-    }
-
-    #[inline]
-    pub const fn dir(&self) -> &PathBuf {
-        &self.dir
-    }
-
-    #[inline]
-    pub fn set_dir(mut self, dir: PathBuf) -> Self {
-        self.dir = dir;
-        self
-    }
-
-    #[inline]
-    pub const fn set_in_memory(mut self) -> Self {
-        self.in_memory = true;
-        self
-    }
-
-    #[inline]
-    pub const fn in_memory(&self) -> bool {
-        self.in_memory
-    }
-
-    #[inline]
-    pub const fn set_read_only(mut self) -> Self {
-        self.read_only = true;
-        self
-    }
-
-    #[inline]
-    pub const fn read_only(&self) -> bool {
-        self.read_only
-    }
-
-    #[inline]
-    pub const fn set_encryption_key_rotation_duration(mut self, duration: Duration) -> Self {
-        self.encryption_key_rotation_duration = duration;
-        self
-    }
-
-    #[inline]
-    pub const fn encryption_key_rotation_duration(&self) -> Duration {
-        self.encryption_key_rotation_duration
-    }
-
-    #[inline]
-    pub fn set_encryption(mut self, encryption: Encryption) -> Self {
-        self.encryption = encryption;
-        self
-    }
-
-    #[inline]
-    pub const fn encryption(&self) -> &Encryption {
-        &self.encryption
-    }
-
-    #[inline]
-    pub fn secret(&self) -> &[u8] {
-        self.encryption.secret()
-    }
-
-    #[inline]
-    pub fn secret_bytes(&self) -> Bytes {
-        self.encryption.secret_bytes()
-    }
-}
-
 /// Structure of Key Registry.
 /// This structure is lock free.
 ///
@@ -144,7 +51,7 @@ pub enum Registry {
 
 pub struct MemoryRegistry {
     inner: RwLock<MemoryRegistryInner>,
-    opts: RefCounter<RegistryOptions>,
+    opts: RefCounter<KeyRegistryOptions>,
     // record number of the keys in the registry, avoid lock the whole registry.
     num_of_keys: AtomicUsize,
 }
@@ -157,7 +64,7 @@ struct MemoryRegistryInner {
 
 impl MemoryRegistry {
     #[inline]
-    fn new(opts: RefCounter<RegistryOptions>) -> Self {
+    fn new(opts: RefCounter<KeyRegistryOptions>) -> Self {
         Self {
             inner: RwLock::new(MemoryRegistryInner {
                 data_keys: HashMap::new(),
@@ -210,7 +117,7 @@ impl MemoryRegistry {
         let inner = self.inner.read();
         if valid_key(
             inner.last_created,
-            self.opts.encryption_key_rotation_duration,
+            self.opts.encryption_key_rotation_duration(),
         ) {
             // If less than EncryptionKeyRotationDuration, returns the last generated key.
             return Ok(inner.data_keys.get(&inner.next_key_id).unwrap().clone());
@@ -222,7 +129,7 @@ impl MemoryRegistry {
         // checking once again.
         if valid_key(
             inner.last_created,
-            self.opts.encryption_key_rotation_duration,
+            self.opts.encryption_key_rotation_duration(),
         ) {
             return Ok(inner.data_keys.get(&inner.next_key_id).unwrap().clone());
         }
@@ -266,7 +173,7 @@ impl MemoryRegistry {
 
 pub struct PersistentRegistry {
     inner: RwLock<PersistentRegistryInner>,
-    opts: RefCounter<RegistryOptions>,
+    opts: RefCounter<KeyRegistryOptions>,
     // record number of the keys in the registry, avoid lock the whole registry.
     num_of_keys: AtomicUsize,
 }
@@ -322,7 +229,7 @@ impl PersistentRegistry {
         let inner = self.inner.read();
         if valid_key(
             inner.last_created,
-            self.opts.encryption_key_rotation_duration,
+            self.opts.encryption_key_rotation_duration(),
         ) {
             // If less than EncryptionKeyRotationDuration, returns the last generated key.
             return Ok(inner.data_keys.get(&inner.next_key_id).unwrap().clone());
@@ -334,7 +241,7 @@ impl PersistentRegistry {
         // checking once again.
         if valid_key(
             inner.last_created,
-            self.opts.encryption_key_rotation_duration,
+            self.opts.encryption_key_rotation_duration(),
         ) {
             return Ok(inner.data_keys.get(&inner.next_key_id).unwrap().clone());
         }
@@ -387,10 +294,10 @@ impl PersistentRegistry {
     fn store_data_key(
         mut inner: RwLockWriteGuard<PersistentRegistryInner>,
         mut dk: DataKey,
-        opts: &RegistryOptions,
+        opts: &KeyRegistryOptions,
     ) -> Result<u64> {
         dk.data
-            .encrypt_to_vec(opts.secret(), dk.iv.as_ref(), opts.encryption.algorithm())
+            .encrypt_to_vec(opts.secret(), dk.iv.as_ref(), opts.encryption().algorithm())
             .map_err(From::from)
             .and_then(|data| {
                 dk.data = data.into();
@@ -408,22 +315,22 @@ impl PersistentRegistry {
     }
 }
 
-impl Registry {
+impl vela_traits::KeyRegistry for Registry {
     #[inline]
-    pub fn encryption_algorithm(&self) -> EncryptionAlgorithm {
+    fn encryption_algorithm(&self) -> EncryptionAlgorithm {
         match &self {
-            Registry::Memory(r) => r.opts.encryption.algorithm(),
-            Registry::Persistent(r) => r.opts.encryption.algorithm(),
+            Registry::Memory(r) => r.opts.encryption().algorithm(),
+            Registry::Persistent(r) => r.opts.encryption().algorithm(),
         }
     }
 
     /// Opens key registry if it exists, otherwise it'll create key registry
     /// and returns key registry.
-    pub fn open(opts: RefCounter<RegistryOptions>) -> Result<Self> {
-        if opts.encryption.is_some() {
-            let secret = opts.encryption.secret();
+    fn open(opts: RefCounter<KeyRegistryOptions>) -> Result<Self> {
+        if opts.encryption().is_some() {
+            let secret = opts.secret();
             // sanity check the encryption key length.
-            if !is_valid_key_length(secret, opts.encryption.algorithm()) {
+            if !is_valid_key_length(secret, opts.encryption().algorithm()) {
                 #[cfg(feature = "tracing")]
                 {
                     tracing::error!(target: "key_registry", "during open registry: invalid encryption key length {}", secret.len());
@@ -433,11 +340,11 @@ impl Registry {
         }
 
         // If db is opened in InMemory mode, we don't need to write key registry to the disk.
-        if opts.in_memory {
+        if opts.in_memory() {
             return Ok(Registry::Memory(RefCounter::new(MemoryRegistry::new(opts))));
         }
 
-        let open_opts = if opts.read_only {
+        let open_opts = if opts.read_only() {
             let mut opts = OpenOptions::new();
             opts.create(true).read(true).write(false);
             opts
@@ -448,25 +355,28 @@ impl Registry {
         };
 
         let path = opts
-            .dir
+            .dir()
             .join(REGISTRY_FILENAME)
             .with_extension(REGISTRY_FILE_EXTENSION);
         // registry file does not exist, we create a new one
         if !path.exists() {
             let mut file = open_opts.open(&path)?;
 
-            if opts.encryption.is_none() {
+            if opts.encryption().is_none() {
                 file.write_all(SANITY_TEXT)?;
             } else {
                 let iv = random_iv();
                 file.write_all(&iv)?;
-                let e_sanity =
-                    SANITY_TEXT.encrypt_to_vec(opts.secret(), &iv, opts.encryption.algorithm())?;
+                let e_sanity = SANITY_TEXT.encrypt_to_vec(
+                    opts.secret(),
+                    &iv,
+                    opts.encryption().algorithm(),
+                )?;
                 file.write_all(&e_sanity)?;
             }
 
             file.flush().map_err(From::from).map(|_| {
-                if opts.read_only {
+                if opts.read_only() {
                     Registry::Memory(RefCounter::new(MemoryRegistry::new(opts)))
                 } else {
                     Registry::Persistent(RefCounter::new(PersistentRegistry {
@@ -491,7 +401,7 @@ impl Registry {
 
     /// Rewrite the existing key registry file with new one.
     /// It is okay to give closed key registry. Since, it's using only the datakey.
-    pub fn rewrite(&self, opts: RefCounter<RegistryOptions>) -> Result<()> {
+    fn rewrite(&self, opts: RefCounter<KeyRegistryOptions>) -> Result<()> {
         let mut buf = BytesMut::new();
         let iv = IV::random();
 
@@ -533,7 +443,7 @@ impl Registry {
             }
         }
 
-        let mut tmp_path = opts.dir.clone();
+        let mut tmp_path = opts.dir().clone();
         tmp_path.push(REWRITE_REGISTRY_FILENAME);
         tmp_path.set_extension(REWRITE_REGISTRY_FILE_EXTENSION);
         // Open temporary file to write the data and do atomic rename.
@@ -541,12 +451,12 @@ impl Registry {
             .and_then(|mut f| f.write_all(buf.as_ref()).map(|_| f))
             .and_then(|f| f.sync_all())
             .and_then(|_| {
-                let mut path = opts.dir.clone();
+                let mut path = opts.dir().clone();
                 path.push(REGISTRY_FILENAME);
                 path.set_extension(REGISTRY_FILE_EXTENSION);
                 std::fs::rename(&tmp_path, path)
             })
-            .and_then(|_| File::open(&opts.dir))
+            .and_then(|_| File::open(opts.dir()))
             .and_then(|f| f.sync_all())
             .map_err(|e| {
                 #[cfg(feature = "tracing")]
@@ -559,7 +469,7 @@ impl Registry {
 
     /// Returns `DataKey` of the given key id.
     #[inline]
-    pub fn data_key(&self, id: &u64) -> Result<Option<DataKey>> {
+    fn data_key(&self, id: &u64) -> Result<Option<DataKey>> {
         match self {
             Registry::Memory(inner) => inner.data_key(id),
             Registry::Persistent(inner) => inner.data_key(id),
@@ -568,7 +478,7 @@ impl Registry {
 
     /// Returns the number of data keys in the registry.
     #[inline]
-    pub fn num_data_keys(&self) -> usize {
+    fn num_data_keys(&self) -> usize {
         match self {
             Registry::Memory(r) => r.num_of_keys.load(Ordering::Relaxed),
             Registry::Persistent(r) => r.num_of_keys.load(Ordering::Relaxed),
@@ -579,7 +489,7 @@ impl Registry {
     /// period. If the last generated datakey lifetime exceeds the rotation period.
     /// It'll create new datakey.
     #[inline]
-    pub fn latest_data_key(&self) -> Result<DataKey> {
+    fn latest_data_key(&self) -> Result<DataKey> {
         match self {
             Registry::Memory(r) => r.latest_data_key(),
             Registry::Persistent(r) => r.latest_data_key(),
@@ -587,16 +497,32 @@ impl Registry {
     }
 
     #[inline]
-    pub fn insert(&self, dk: DataKey) -> Result<u64> {
+    fn insert(&self, dk: DataKey) -> Result<u64> {
         match self {
             Registry::Memory(r) => r.insert(dk),
             Registry::Persistent(r) => r.insert(dk),
         }
     }
 
+    fn valid_sanity(
+        e_sanity_txt: &[u8],
+        secret: &[u8],
+        iv: &[u8],
+        algo: EncryptionAlgorithm,
+    ) -> Result<bool> {
+        e_sanity_txt
+            .encrypt_to_vec(secret, iv, algo)
+            .map(|v| v.eq(SANITY_TEXT))
+            .map_err(core::convert::From::from)
+    }
+
+    type Error = Error;
+}
+
+impl Registry {
     /// Read the key registry file and build the key registry struct.
-    fn read_key_registry(mut file: File, opts: RefCounter<RegistryOptions>) -> Result<Self> {
-        let mut iter = RegistryIterator::new(&mut file, &opts.encryption)?;
+    fn read_key_registry(mut file: File, opts: RefCounter<KeyRegistryOptions>) -> Result<Self> {
+        let mut iter = RegistryIterator::new(&mut file, opts.encryption())?;
         let mut map = HashMap::new();
         let mut next_key_id = 0;
         let mut last_created = 0;
@@ -622,7 +548,7 @@ impl Registry {
         match err {
             // We read all the key. So, Ignoring this error.
             Error::IO(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                if opts.in_memory {
+                if opts.in_memory() {
                     Ok(Registry::Memory(RefCounter::new(MemoryRegistry {
                         opts,
                         inner: RwLock::new(MemoryRegistryInner {
@@ -647,18 +573,6 @@ impl Registry {
             }
             e => Err(e),
         }
-    }
-
-    pub fn valid_sanity(
-        e_sanity_txt: &[u8],
-        secret: &[u8],
-        iv: &[u8],
-        algo: EncryptionAlgorithm,
-    ) -> Result<bool> {
-        e_sanity_txt
-            .encrypt_to_vec(secret, iv, algo)
-            .map(|v| v.eq(SANITY_TEXT))
-            .map_err(core::convert::From::from)
     }
 }
 
@@ -796,9 +710,9 @@ fn valid_key(last_created: u64, duration: Duration) -> bool {
 }
 
 #[inline]
-fn store_data_key(buf: &mut BytesMut, mut dk: DataKey, opts: &RegistryOptions) -> Result<()> {
+fn store_data_key(buf: &mut BytesMut, mut dk: DataKey, opts: &KeyRegistryOptions) -> Result<()> {
     dk.data
-        .encrypt_to_vec(opts.secret(), dk.iv.as_ref(), opts.encryption.algorithm())
+        .encrypt_to_vec(opts.secret(), dk.iv.as_ref(), opts.encryption().algorithm())
         .map_err(From::from)
         .map(|data| {
             dk.data = data.into();
@@ -817,12 +731,13 @@ pub(crate) mod test {
     use scopeguard::defer;
     use std::fs;
     use std::path::Path;
+    use vela_traits::KeyRegistry;
 
     pub(crate) fn get_registry_test_options<P: AsRef<Path>>(
         dir: P,
         encryption: Encryption,
-    ) -> RefCounter<RegistryOptions> {
-        RegistryOptions {
+    ) -> RefCounter<KeyRegistryOptions> {
+        KeyRegistryOptions {
             dir: dir.as_ref().to_path_buf(),
             in_memory: false,
             read_only: false,
@@ -835,8 +750,8 @@ pub(crate) mod test {
     fn get_memory_registry_test_options<P: AsRef<Path>>(
         dir: P,
         key: Vec<u8>,
-    ) -> RefCounter<RegistryOptions> {
-        RegistryOptions {
+    ) -> RefCounter<KeyRegistryOptions> {
+        KeyRegistryOptions {
             dir: dir.as_ref().to_path_buf(),
             in_memory: true,
             read_only: false,

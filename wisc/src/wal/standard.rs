@@ -1,4 +1,4 @@
-use crate::{error::*, registry::Registry, SafeRead, ValuePointer, VALUE_LOG_HEADER_SIZE};
+use crate::{error::*, registry::Registry, SafeRead, VALUE_LOG_HEADER_SIZE};
 use core::{
     cell::Cell,
     sync::atomic::{AtomicU32, Ordering},
@@ -7,25 +7,18 @@ use fmmap::{MetaDataExt, MmapFileExt, MmapFileMut, MmapFileMutExt, Options};
 use parking_lot::RwLock;
 use rand::{thread_rng, RngCore};
 use std::path::{Path, PathBuf};
+use vela_options::LogFileOptions;
+use vela_traits::{KeyRegistry, LogFile};
 use vpb::{
     encrypt::{Encryptor, BLOCK_SIZE},
     kvstructs::{
         bytes::{BufMut, Bytes, BytesMut},
-        Entry, EntryRef, Header, Key, Value, ValueExt, MAX_HEADER_SIZE, OP,
+        Entry, EntryRef, Header, Key, Value, ValueExt, ValuePointer, MAX_HEADER_SIZE, OP,
     },
     DataKey, EncryptionAlgorithm,
 };
 
 const WAL_IV_SIZE: usize = 12;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct WALOptions {
-    pub sync_writes: bool,
-    pub read_only: bool,
-    pub enable_metrics: bool,
-    pub mem_table_size: u64,
-    pub save_on_drop: bool,
-}
 
 /// WAL is lock-free
 ///
@@ -39,13 +32,13 @@ pub struct WALOptions {
 pub struct WAL {
     inner: RwLock<MmapFileMut>,
     pub(crate) path: PathBuf,
-    fid: u32,
+    pub(crate) fid: u32,
     pub(crate) write_at: AtomicU32,
     pub(crate) size: AtomicU32,
     data_key: Option<DataKey>,
     base_iv: [u8; WAL_IV_SIZE],
     registry: Registry,
-    opt: WALOptions,
+    opt: LogFileOptions,
 }
 
 /// Safety: the `write_at` is only accessed when inner lock is hold.
@@ -53,14 +46,14 @@ unsafe impl Sync for WAL {}
 /// Safety: the `write_at` is only accessed when inner lock is hold.
 unsafe impl Send for WAL {}
 
-impl WAL {
-    pub fn open<P: AsRef<std::path::Path>>(
+impl LogFile for WAL {
+    fn open<P: AsRef<std::path::Path>>(
         path: P,
         #[cfg(unix)] flags: i32,
         #[cfg(windows)] flags: u32,
         fid: u32,
         registry: Registry,
-        opts: WALOptions,
+        opts: LogFileOptions,
     ) -> Result<Option<Self>> {
         let save = opts.save_on_drop;
         if !path.as_ref().exists() {
@@ -95,109 +88,17 @@ impl WAL {
         }
     }
 
-    fn open_in(
-        path: PathBuf,
-        fid: u32,
-        mmap: MmapFileMut,
-        registry: Registry,
-        size: usize,
-        opts: WALOptions,
-    ) -> Result<Option<Self>> {
-        if size < VALUE_LOG_HEADER_SIZE {
-            // Every vlog file should have at least VALUE_LOG_HEADER_SIZE. If it is less than vlogHeaderSize
-            // then it must have been corrupted. But no need to handle here. log replayer will truncate
-            // and bootstrap the logfile. So ignoring here.
-            return Ok(None);
-        }
-
-        // Copy over the encryption registry data.
-        let mut buf = [0; VALUE_LOG_HEADER_SIZE];
-        buf.copy_from_slice(mmap.slice(0, VALUE_LOG_HEADER_SIZE));
-        let key_id = u64::from_be_bytes((&buf[..8]).try_into().unwrap());
-
-        // retrieve datakey.
-        registry.data_key(&key_id)
-            .map(|dk| Some(Self {
-                inner: RwLock::new(mmap),
-                path,
-                fid,
-                write_at: AtomicU32::new(VALUE_LOG_HEADER_SIZE as u32),
-                size: AtomicU32::new(size as u32),
-                data_key: dk,
-                base_iv: buf[8..].try_into().unwrap(),
-                registry,
-                opt: opts,
-            }))
-            .map_err(|e| {
-                #[cfg(feature = "tracing")]
-                {
-                    tracing::error!(target: "wal", err = %e, "while opening value log file {}", fid);
-                }
-                e
-            })
-    }
-
-    /// Initialize the log file with key id and baseIV.
-    /// The below figure shows the layout of log file.
-    ///
-    /// ```text
-    /// +----------------+------------------+------------------+
-    /// | keyID(8 bytes) | baseIV(12 bytes) |     entry...     |
-    /// +----------------+------------------+------------------+
-    /// ```
-    fn bootstrap(
-        path: PathBuf,
-        fid: u32,
-        registry: Registry,
-        mut mmap: MmapFileMut,
-        opt: WALOptions,
-    ) -> Result<Self> {
-        // generate data key for the log file.
-        let (key_id, data_key) = if registry.encryption_algorithm().is_none() {
-            (0, None)
-        } else {
-            let data_key = registry.latest_data_key()?;
-            (data_key.key_id, Some(data_key))
-        };
-
-        // We'll always preserve vlogHeaderSize for key id and baseIV.
-        let mut buf = [0; VALUE_LOG_HEADER_SIZE as usize];
-        // write key id to the buf.
-        // key id will be zero if the logfile is in plain text.
-        buf[..8].copy_from_slice(key_id.to_be_bytes().as_ref());
-        // generate base IV. It'll be used with offset of the vptr to encrypt the entry.
-        let mut rng = thread_rng();
-        rng.fill_bytes(&mut buf[8..]);
-
-        // Initialize base IV.
-        let base_iv: [u8; WAL_IV_SIZE] = buf[8..].try_into().unwrap();
-
-        // Copy over to the logFile.
-        mmap.slice_mut(0, buf.len()).copy_from_slice(&buf);
-        mmap.zero_range(
-            VALUE_LOG_HEADER_SIZE,
-            VALUE_LOG_HEADER_SIZE + MAX_HEADER_SIZE,
-        );
-
-        Ok(Self {
-            inner: RwLock::new(mmap),
-            path,
-            fid,
-            size: AtomicU32::new(VALUE_LOG_HEADER_SIZE as u32),
-            write_at: AtomicU32::new(VALUE_LOG_HEADER_SIZE as u32),
-            data_key,
-            base_iv,
-            registry,
-            opt,
-        })
+    #[inline]
+    fn stat(&self) -> Result<fmmap::MetaData> {
+        self.inner.read().metadata().map_err(From::from)
     }
 
     #[inline]
-    pub fn sync(&self) -> Result<()> {
+    fn sync(&self) -> Result<()> {
         self.inner.read().flush().map_err(From::from)
     }
 
-    pub fn truncate(&self, end: u64) -> Result<()> {
+    fn truncate(&self, end: u64) -> Result<()> {
         let mut inner = self.inner.write();
         inner
             .metadata()
@@ -216,7 +117,7 @@ impl WAL {
     /// Iterates over log file. It doesn't not allocate new memory for every kv pair.
     /// Therefore, the kv pair is only valid for the duration of fn call.
     #[inline]
-    pub fn iter<F: FnMut(EntryRef, ValuePointer) -> Result<()>>(
+    fn iter<F: FnMut(EntryRef, ValuePointer) -> Result<()>>(
         &self,
         mut offset: u32,
         log_entry: F,
@@ -244,7 +145,7 @@ impl WAL {
         iter.valid_end_offset(log_entry)
     }
 
-    pub(crate) fn read(&self, p: ValuePointer) -> Result<Vec<u8>> {
+    fn read(&self, p: ValuePointer) -> Result<Vec<u8>> {
         let mut num_bytes_read = 0;
         let offset = p.offset as u64;
         // Do not convert sz to uint32, because the self.mmap.len() can be of size
@@ -282,7 +183,7 @@ impl WAL {
         }
     }
 
-    pub(crate) fn write_entry(&self, buf: &mut BytesMut, ent: &Entry) -> Result<()> {
+    fn write_entry(&self, buf: &mut BytesMut, ent: &Entry) -> Result<()> {
         buf.clear();
         let mut inner = self.inner.write();
         let offset = self.write_at.load(Ordering::Acquire);
@@ -306,12 +207,7 @@ impl WAL {
     /// | header | key | value | crc32 |
     /// +--------+-----+-------+-------+
     /// ```
-    pub(crate) fn encode_entry(
-        &self,
-        buf: &mut BytesMut,
-        ent: &Entry,
-        offset: u32,
-    ) -> Result<usize> {
+    fn encode_entry(&self, buf: &mut BytesMut, ent: &Entry, offset: u32) -> Result<usize> {
         let header = ent.get_header();
 
         let mut hash = vpb::checksum::crc32fast::Hasher::default();
@@ -363,7 +259,7 @@ impl WAL {
         }
     }
 
-    pub(crate) fn decode_entry(&self, src: &[u8], offset: u32) -> Result<Entry> {
+    fn decode_entry(&self, src: &[u8], offset: u32) -> Result<Entry> {
         let (h_len, h) = Header::decode(src);
         let kv = &src[h_len..];
 
@@ -386,6 +282,109 @@ impl WAL {
         let mut ent = Entry::new_from_kv(key, val);
         ent.set_offset(offset);
         Ok(ent)
+    }
+
+    type Error = Error;
+
+    type KeyRegistry = Registry;
+}
+
+impl WAL {
+    fn open_in(
+        path: PathBuf,
+        fid: u32,
+        mmap: MmapFileMut,
+        registry: Registry,
+        size: usize,
+        opts: LogFileOptions,
+    ) -> Result<Option<Self>> {
+        if size < VALUE_LOG_HEADER_SIZE {
+            // Every vlog file should have at least VALUE_LOG_HEADER_SIZE. If it is less than vlogHeaderSize
+            // then it must have been corrupted. But no need to handle here. log replayer will truncate
+            // and bootstrap the logfile. So ignoring here.
+            return Ok(None);
+        }
+
+        // Copy over the encryption registry data.
+        let mut buf = [0; VALUE_LOG_HEADER_SIZE];
+        buf.copy_from_slice(mmap.slice(0, VALUE_LOG_HEADER_SIZE));
+        let key_id = u64::from_be_bytes((&buf[..8]).try_into().unwrap());
+
+        // retrieve datakey.
+        registry.data_key(&key_id)
+            .map(|dk| Some(Self {
+                inner: RwLock::new(mmap),
+                path,
+                fid,
+                write_at: AtomicU32::new(VALUE_LOG_HEADER_SIZE as u32),
+                size: AtomicU32::new(size as u32),
+                data_key: dk,
+                base_iv: buf[8..].try_into().unwrap(),
+                registry,
+                opt: opts,
+            }))
+            .map_err(|e| {
+                #[cfg(feature = "tracing")]
+                {
+                    tracing::error!(target: "wal", err = %e, "while opening value log file {}", fid);
+                }
+                e
+            })
+    }
+
+    /// Initialize the log file with key id and baseIV.
+    /// The below figure shows the layout of log file.
+    ///
+    /// ```text
+    /// +----------------+------------------+------------------+
+    /// | keyID(8 bytes) | baseIV(12 bytes) |     entry...     |
+    /// +----------------+------------------+------------------+
+    /// ```
+    fn bootstrap(
+        path: PathBuf,
+        fid: u32,
+        registry: Registry,
+        mut mmap: MmapFileMut,
+        opt: LogFileOptions,
+    ) -> Result<Self> {
+        // generate data key for the log file.
+        let (key_id, data_key) = if registry.encryption_algorithm().is_none() {
+            (0, None)
+        } else {
+            let data_key = registry.latest_data_key()?;
+            (data_key.key_id, Some(data_key))
+        };
+
+        // We'll always preserve vlogHeaderSize for key id and baseIV.
+        let mut buf = [0; VALUE_LOG_HEADER_SIZE as usize];
+        // write key id to the buf.
+        // key id will be zero if the logfile is in plain text.
+        buf[..8].copy_from_slice(key_id.to_be_bytes().as_ref());
+        // generate base IV. It'll be used with offset of the vptr to encrypt the entry.
+        let mut rng = thread_rng();
+        rng.fill_bytes(&mut buf[8..]);
+
+        // Initialize base IV.
+        let base_iv: [u8; WAL_IV_SIZE] = buf[8..].try_into().unwrap();
+
+        // Copy over to the logFile.
+        mmap.slice_mut(0, buf.len()).copy_from_slice(&buf);
+        mmap.zero_range(
+            VALUE_LOG_HEADER_SIZE,
+            VALUE_LOG_HEADER_SIZE + MAX_HEADER_SIZE,
+        );
+
+        Ok(Self {
+            inner: RwLock::new(mmap),
+            path,
+            fid,
+            size: AtomicU32::new(VALUE_LOG_HEADER_SIZE as u32),
+            write_at: AtomicU32::new(VALUE_LOG_HEADER_SIZE as u32),
+            data_key,
+            base_iv,
+            registry,
+            opt,
+        })
     }
 
     pub(crate) fn done_writing(&self, offset: u32) -> Result<()> {
@@ -599,8 +598,8 @@ mod test {
         dir
     }
 
-    fn get_test_wal_options(save_on_drop: bool) -> WALOptions {
-        WALOptions {
+    fn get_test_wal_options(save_on_drop: bool) -> LogFileOptions {
+        LogFileOptions {
             sync_writes: true,
             read_only: false,
             enable_metrics: false,

@@ -153,6 +153,7 @@ mod raw_value_pointer;
 mod value;
 mod value_enc;
 mod value_mut;
+mod value_pointer;
 
 /// Unsafe raw pointer for [`Key`], [`Value`], [`Entry`]
 ///
@@ -177,6 +178,7 @@ pub use key_mut::*;
 pub use value::*;
 pub use value_enc::*;
 pub use value_mut::*;
+pub use value_pointer::*;
 
 use crate::bytes::{BufMut, BytesMut};
 use alloc::vec::Vec;

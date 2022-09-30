@@ -1,0 +1,41 @@
+[package]
+name = "vela-traits"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0/MIT"
+description = "A placeholder"
+
+
+[features]
+default = ["std"]
+std = ["vela-options/std", "vela-utils/ref_counter_std"]
+
+js = ["vela-options/js"]
+
+# enable aes encryption
+aes = ["vela-options/aes"]
+aes-std = ["vela-options/aes-std"]
+
+# enable seahash checksum
+sea = ["vela-options/sea"]
+sea-std = ["vela-options/sea-std"]
+
+# enable xxhash64 checksum
+xxhash64 = ["vela-options/xxhash64"]
+xxhash64-std = ["vela-options/xxhash64-std"]
+
+# enable snappy compression
+snappy = ["vela-options/snappy"]
+
+# enable zstd compression
+zstd = ["vela-options/zstd"]
+
+# enable lz4 compression
+lz4 = ["vela-options/lz4"]
+lz4-std = ["vela-options/lz4-std"]
+
+[dependencies]
+fmmap = "0.3"
+skl = { version = "0.3", path = "../skl"}
+vela-options = { version = "0.0.0", path = "../options" }
+vela-utils = { version = "0.1.0", path = "../utils", features = ["ref_counter"] }

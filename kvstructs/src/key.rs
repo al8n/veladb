@@ -185,6 +185,12 @@ impl Ord for Key {
     }
 }
 
+impl core::borrow::Borrow<[u8]> for Key {
+    fn borrow(&self) -> &[u8] {
+        self.data.as_ref()
+    }
+}
+
 #[inline(always)]
 pub(crate) fn compare_key_in(me: &[u8], other: &[u8]) -> Ordering {
     let sb = me.len().saturating_sub(TIMESTAMP_SIZE);
@@ -328,6 +334,12 @@ impl<'a> Ord for KeyRef<'a> {
 impl<'a> From<&'a [u8]> for KeyRef<'a> {
     fn from(data: &'a [u8]) -> Self {
         Self { data }
+    }
+}
+
+impl<'a> core::borrow::Borrow<[u8]> for KeyRef<'a> {
+    fn borrow(&self) -> &[u8] {
+        self.data
     }
 }
 

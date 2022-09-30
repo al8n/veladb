@@ -1,9 +1,12 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::{error::*, ValuePointer, WAL};
-use vpb::kvstructs::{bytes::BytesMut, Entry, EntryRef, Key, KeyExt, Value, ValueExt, OP};
+use crate::{error::*, WAL};
+use vela_traits::{LogFile, MemoryTable};
+use vpb::kvstructs::{
+    bytes::BytesMut, Entry, EntryRef, Key, KeyExt, Value, ValueExt, ValuePointer, OP,
+};
 
-const MEM_FILE_EXTENSION: &'static str = "mem";
+const MEM_FILE_EXTENSION: &str = "mem";
 
 pub struct MemTableOptions {
     pub size: u64,
@@ -22,9 +25,11 @@ pub struct MemTable {
     opts: MemTableOptions,
 }
 
-impl MemTable {
+impl MemoryTable for MemTable {
+    type Error = Error;
+
     #[inline]
-    pub fn sync_wal(&self) -> Result<()> {
+    fn sync_wal(&self) -> Result<()> {
         if let Some(wal) = &self.wal {
             wal.sync()
         } else {
@@ -33,7 +38,7 @@ impl MemTable {
     }
 
     #[inline]
-    pub fn is_full(&self) -> bool {
+    fn is_full(&self) -> bool {
         if self.skl.mem_size() as u64 >= self.opts.size {
             return true;
         }
@@ -46,7 +51,7 @@ impl MemTable {
         self.wal.as_ref().unwrap().write_at.load(Ordering::Relaxed) as u64 >= self.opts.size
     }
 
-    pub fn insert(&mut self, key: Key, val: Value) -> Result<()> {
+    fn insert(&mut self, key: Key, val: Value) -> Result<()> {
         let ent = Entry::new_from_kv(key, val);
 
         // wal is nil only when veladb in running in in-memory mode and we don't need the wal.
@@ -78,7 +83,7 @@ impl MemTable {
         }
     }
 
-    pub fn update_skiplist(&self) -> Result<()> {
+    fn update_skiplist(&self) -> Result<()> {
         if let Some(wal) = &self.wal {
             let mut first = true;
             let replay = |ent: EntryRef, _vp: ValuePointer| -> Result<()> {

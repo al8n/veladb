@@ -1,0 +1,37 @@
+[package]
+name = "vela-options"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0/MIT"
+description = "A placeholder"
+
+[features]
+default = ["std"]
+std = ["vpb/std"]
+
+js = ["vpb/js"]
+
+# enable aes encryption
+aes = ["vpb/aes"]
+aes-std = ["vpb/aes-std"]
+
+# enable seahash checksum
+sea = ["vpb/sea"]
+sea-std = ["vpb/sea-std"]
+
+# enable xxhash64 checksum
+xxhash64 = ["vpb/xxhash64"]
+xxhash64-std = ["vpb/xxhash64-std"]
+
+# enable snappy compression
+snappy = ["vpb/snappy"]
+
+# enable zstd compression
+zstd = ["vpb/zstd"]
+
+# enable lz4 compression
+lz4 = ["vpb/lz4"]
+lz4-std = ["vpb/lz4-std"]
+
+[dependencies]
+vpb = { version = "0.1.0", path = "../vpb" }

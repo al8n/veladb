@@ -2,6 +2,8 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
+    #[cfg(feature = "std")]
+    Any(Box<dyn std::error::Error + Send + Sync>),
     EncryptError(vpb::encrypt::EncryptError),
     InvalidEncryptionKeyLength(usize),
     InvalidDataKeyID(u64),
@@ -14,6 +16,14 @@ pub enum Error {
     IO(std::io::Error),
     ChecksumMismatch,
     Truncate,
+    AlreadyMarkedDeletion(u32),
+
+    /// Returned if a call for value log GC doesn't result in a log file rewrite.
+    NoRewrite,
+
+    /// Returned if a value log GC is called either while another GC is running, or
+    /// after DB::Close has been called.
+    Rejected,
     TruncateNeeded {
         end_offset: u32,
         size: u32,
@@ -55,6 +65,7 @@ impl core::fmt::Display for Error {
             Error::InvalidEncryptionKeyLength(len) => {
                 write!(f, "invalid encryption key length {}", len)
             }
+            #[cfg(feature = "std")]
             Error::Mmap(e) => write!(f, "mmap: {}", e),
             Error::SanityError => write!(f, "sanity: error while reading sanity text"),
             Error::SecrectMismatch => write!(f, "secret: encryption key mismatch"),
@@ -63,6 +74,7 @@ impl core::fmt::Display for Error {
             }
             Error::DecodeError(e) => write!(f, "decode: {}", e),
             Error::InvalidDataKeyID(e) => write!(f, "invalid data key id {}", e),
+            #[cfg(feature = "std")]
             Error::IO(e) => write!(f, "io: {}", e),
             Error::EOF => write!(f, "eof"),
             Error::Truncate => write!(f, "do truncate"),
@@ -70,6 +82,13 @@ impl core::fmt::Display for Error {
             Error::TruncateNeeded { end_offset, size } => {
                 write!(f, "end offset: {} < size: {}", end_offset, size)
             }
+            Error::AlreadyMarkedDeletion(fid) => {
+                write!(f, "value log file already marked for deletion fid: {fid}")
+            }
+            Error::NoRewrite => write!(f, "Value log GC attempt didn't result in any cleanup"),
+            Error::Rejected => write!(f, "Value log GC request rejected"),
+            #[cfg(feature = "std")]
+            Error::Any(e) => write!(f, "wisc: {e}"),
         }
     }
 }

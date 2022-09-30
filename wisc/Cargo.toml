@@ -23,7 +23,9 @@ rand = { version = "0.8", default-features = false }
 rustix = { version = "0.35", optional = true, features = ["fs"] }
 skl = { version = "0.3", path = "../skl", default-features = false, features = ["alloc"] }
 tracing = { version = "0.1", optional = true, default-features = false }
+vela-options = { version = "0.0.0", path = "../options" }
 vela-utils = { version = "0.1", path = "../utils", default-features = false, features = ["ref_counter"] }
+vela-traits = { version = "0.0.0", path = "../traits" }
 vpb = { version = "0.1", path = "../vpb", default-features = false, features = ["aes"] }
 
 [dev-dependencies]
