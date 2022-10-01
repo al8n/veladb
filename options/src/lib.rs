@@ -9,11 +9,11 @@ pub use vpb;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct KeyRegistryOptions {
-    dir: PathBuf,
-    in_memory: bool,
-    read_only: bool,
-    encryption_key_rotation_duration: Duration,
-    encryption: Encryption,
+    pub dir: PathBuf,
+    pub in_memory: bool,
+    pub read_only: bool,
+    pub encryption_key_rotation_duration: Duration,
+    pub encryption: Encryption,
 }
 
 impl Default for KeyRegistryOptions {
@@ -234,14 +234,20 @@ impl LogFileOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ValueLogOptions {
-    size: u64,
-    in_memory: bool,
-    read_only: bool,
-    sync_writes: bool,
-    enable_metrics: bool,
-    dir_path: PathBuf,
-    file_size: u64,
-    save_on_drop: bool,
+    pub size: u64,
+    pub in_memory: bool,
+    pub read_only: bool,
+    pub sync_writes: bool,
+    pub enable_metrics: bool,
+    pub dir_path: PathBuf,
+    pub file_size: u64,
+    pub save_on_drop: bool,
+    pub verify_value_checksum: bool,
+    /// Transaction start and commit timestamps are managed by end-user.
+    /// This is only useful for databases built on top of VelaDB.
+    /// Not recommended for most users.
+    pub managed_txns: bool,
+    pub max_entries: u32,
 }
 
 impl ValueLogOptions {
@@ -330,6 +336,39 @@ impl ValueLogOptions {
     #[inline]
     pub const fn set_save_on_drop(mut self, save_on_drop: bool) -> Self {
         self.save_on_drop = save_on_drop;
+        self
+    }
+
+    #[inline]
+    pub const fn verify_value_checksum(&self) -> bool {
+        self.verify_value_checksum
+    }
+
+    #[inline]
+    pub const fn set_verify_value_checksum(mut self, verify_value_checksum: bool) -> Self {
+        self.verify_value_checksum = verify_value_checksum;
+        self
+    }
+
+    #[inline]
+    pub const fn managed_txns(&self) -> bool {
+        self.managed_txns
+    }
+
+    #[inline]
+    pub const fn set_managed_txns(mut self, managed_txns: bool) -> Self {
+        self.managed_txns = managed_txns;
+        self
+    }
+
+    #[inline]
+    pub const fn max_entries(&self) -> u32 {
+        self.max_entries
+    }
+
+    #[inline]
+    pub const fn set_max_entries(mut self, max_entries: u32) -> Self {
+        self.max_entries = max_entries;
         self
     }
 }

@@ -26,7 +26,7 @@ hashbrown = { version = "0.12", optional = true, default-features = false }
 atomic = { version = "0.5",  default-features = false, optional = true }
 crossbeam-channel = { version = "0.5", optional = true }
 crossbeam-utils = { version = "0.8", optional = true }
-wg = { version = "0.2", optional = true }
+wg = { version = "0.3", optional = true }
 parking_lot = { version = "0.12", optional = true }
 scopeguard = { version = "1.1", optional = true }
 

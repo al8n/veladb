@@ -1,9 +1,9 @@
 use vela_utils::watermark::Watermark;
 
-pub struct Oracle {}
+pub struct WiscOracle {}
 
-impl Oracle {
-    pub fn read_timestamp(&self) -> u64 {
+impl vela_traits::Oracle for WiscOracle {
+    fn read_timestamp(&self) -> u64 {
         unimplemented!()
     }
 }

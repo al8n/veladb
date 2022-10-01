@@ -37,7 +37,8 @@ const MAX_VALUE_INFO_SIZE: usize = mem::size_of::<u8>() * 2 + mem::size_of::<u64
 #[derive(Default, Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Hash)]
 #[repr(C)]
 pub struct Value {
-    pub(crate) meta: u8,
+    /// meta
+    pub meta: u8,
     pub(crate) user_meta: u8,
     pub(crate) expires_at: u64,
     pub(crate) version: u64, // This field is not serialized. Only for internal usage.

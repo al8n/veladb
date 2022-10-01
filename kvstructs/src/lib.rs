@@ -180,6 +180,10 @@ pub use value_enc::*;
 pub use value_mut::*;
 pub use value_pointer::*;
 
+/// Write request structures
+#[cfg(feature = "std")]
+pub mod request;
+
 use crate::bytes::{BufMut, BytesMut};
 use alloc::vec::Vec;
 use bitflags::bitflags;

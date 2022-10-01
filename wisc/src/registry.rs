@@ -315,14 +315,18 @@ impl PersistentRegistry {
     }
 }
 
-impl vela_traits::KeyRegistry for Registry {
+impl Registry {
     #[inline]
-    fn encryption_algorithm(&self) -> EncryptionAlgorithm {
+    pub(crate) fn encryption_algorithm(&self) -> EncryptionAlgorithm {
         match &self {
             Registry::Memory(r) => r.opts.encryption().algorithm(),
             Registry::Persistent(r) => r.opts.encryption().algorithm(),
         }
     }
+}
+
+impl vela_traits::KeyRegistry for Registry {
+    type Error = Error;
 
     /// Opens key registry if it exists, otherwise it'll create key registry
     /// and returns key registry.
@@ -503,20 +507,6 @@ impl vela_traits::KeyRegistry for Registry {
             Registry::Persistent(r) => r.insert(dk),
         }
     }
-
-    fn valid_sanity(
-        e_sanity_txt: &[u8],
-        secret: &[u8],
-        iv: &[u8],
-        algo: EncryptionAlgorithm,
-    ) -> Result<bool> {
-        e_sanity_txt
-            .encrypt_to_vec(secret, iv, algo)
-            .map(|v| v.eq(SANITY_TEXT))
-            .map_err(core::convert::From::from)
-    }
-
-    type Error = Error;
 }
 
 impl Registry {
@@ -633,10 +623,13 @@ impl<'a> RegistryIterator<'a> {
         })?;
 
         // Check checksum.
-        if vpb::checksum::crc32fast::hash(&data)
-            != u32::from_be_bytes(self.crc_buf[4..].try_into().unwrap())
-        {
-            return Err(Error::ChecksumMismatch);
+        let data_cks = vpb::checksum::crc32fast::hash(&data);
+        let expected_cks = u32::from_be_bytes(self.crc_buf[4..].try_into().unwrap());
+        if data_cks != expected_cks {
+            return Err(Error::ChecksumMismatch {
+                expected: expected_cks,
+                actual: data_cks,
+            });
         }
 
         let datakey = DataKey::unmarshal(&data).map_err(|e| {

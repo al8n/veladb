@@ -4,7 +4,7 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 use fmmap::{MetaDataExt, MmapFileExt, MmapFileMut, MmapFileMutExt, Options};
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
 use rand::{thread_rng, RngCore};
 use std::path::{Path, PathBuf};
 use vela_options::LogFileOptions;
@@ -46,7 +46,23 @@ unsafe impl Sync for WAL {}
 /// Safety: the `write_at` is only accessed when inner lock is hold.
 unsafe impl Send for WAL {}
 
+pub struct WALReadGuard<'a> {
+    start: usize,
+    end: usize,
+    inner: RwLockReadGuard<'a, MmapFileMut>,
+}
+
+impl<'a> WALReadGuard<'a> {
+    pub fn data(&self) -> &[u8] {
+        &self.inner.as_slice()[self.start..self.end]
+    }
+}
+
 impl LogFile for WAL {
+    type Error = Error;
+
+    type KeyRegistry = Registry;
+
     fn open<P: AsRef<std::path::Path>>(
         path: P,
         #[cfg(unix)] flags: i32,
@@ -54,7 +70,7 @@ impl LogFile for WAL {
         fid: u32,
         registry: Registry,
         opts: LogFileOptions,
-    ) -> Result<Option<Self>> {
+    ) -> Result<Self> {
         let save = opts.save_on_drop;
         if !path.as_ref().exists() {
             Options::new()
@@ -67,7 +83,6 @@ impl LogFile for WAL {
                         mmap.set_remove_on_drop(true);
                     }
                     Self::bootstrap(path.as_ref().to_path_buf(), fid, registry, mmap, opts)
-                        .map(Option::Some)
                 })
         } else {
             Options::new()
@@ -89,13 +104,13 @@ impl LogFile for WAL {
     }
 
     #[inline]
-    fn stat(&self) -> Result<fmmap::MetaData> {
-        self.inner.read().metadata().map_err(From::from)
+    fn sync(&self) -> Result<()> {
+        self.inner.read().flush().map_err(From::from)
     }
 
     #[inline]
-    fn sync(&self) -> Result<()> {
-        self.inner.read().flush().map_err(From::from)
+    fn stat(&self) -> Result<fmmap::MetaData> {
+        self.inner.read().metadata().map_err(From::from)
     }
 
     fn truncate(&self, end: u64) -> Result<()> {
@@ -112,75 +127,6 @@ impl LogFile for WAL {
                 }
             })
             .map_err(From::from)
-    }
-
-    /// Iterates over log file. It doesn't not allocate new memory for every kv pair.
-    /// Therefore, the kv pair is only valid for the duration of fn call.
-    #[inline]
-    fn iter<F: FnMut(EntryRef, ValuePointer) -> Result<()>>(
-        &self,
-        mut offset: u32,
-        log_entry: F,
-    ) -> Result<u32> {
-        if offset == 0 {
-            // If offset is set to zero, let's advance past the encryption key header.
-            offset = VALUE_LOG_HEADER_SIZE as u32;
-        }
-
-        let inner = self.inner.read();
-        let iter = WALIterator {
-            reader: &inner.as_slice()[(offset as usize)..],
-            safe_reader: SafeRead {
-                kv: Box::into_raw(Box::new(vec![])),
-                record_offset: Cell::new(offset),
-            },
-            base_iv: self.base_iv.as_slice(),
-            secret: self.data_key.as_ref().map(|dk| dk.data.as_ref()),
-            path: &self.path,
-            fid: self.fid,
-            encryption_algorithm: self.registry.encryption_algorithm(),
-            start_offset: offset,
-        };
-
-        iter.valid_end_offset(log_entry)
-    }
-
-    fn read(&self, p: ValuePointer) -> Result<Vec<u8>> {
-        let mut num_bytes_read = 0;
-        let offset = p.offset as u64;
-        // Do not convert sz to uint32, because the self.mmap.len() can be of size
-        // 4GB, which overflows the uint32 during conversion to make the size 0,
-        // causing the read to fail with ErrEOF.
-        let inner = self.inner.read();
-        let sz = inner.len() as u64;
-        let val_sz = p.len as u64;
-        let self_sz = self.size.load(Ordering::SeqCst) as u64;
-
-        if offset >= sz || offset + val_sz > sz || offset + val_sz > self_sz {
-            // TODO: public fmmap::error::Error::new function
-            #[cfg(feature = "metrics")]
-            {
-                use crate::metrics::{NUM_BYTES_READ, NUM_READS};
-                if self.opt.enable_metrics {
-                    NUM_READS.fetch_add(1, Ordering::SeqCst);
-                    NUM_BYTES_READ.fetch_add(num_bytes_read, Ordering::SeqCst);
-                }
-            }
-            Err(Error::EOF)
-        } else {
-            let offset = offset as usize;
-            let buf = inner.as_slice()[offset..offset + val_sz as usize].to_vec();
-            num_bytes_read = val_sz;
-            #[cfg(feature = "metrics")]
-            {
-                use crate::metrics::{NUM_BYTES_READ, NUM_READS};
-                if self.opt.enable_metrics {
-                    NUM_READS.fetch_add(1, Ordering::SeqCst);
-                    NUM_BYTES_READ.fetch_add(num_bytes_read, Ordering::SeqCst);
-                }
-            }
-            Ok(buf)
-        }
     }
 
     fn write_entry(&self, buf: &mut BytesMut, ent: &Entry) -> Result<()> {
@@ -284,12 +230,98 @@ impl LogFile for WAL {
         Ok(ent)
     }
 
-    type Error = Error;
+    /// Iterates over log file. It doesn't not allocate new memory for every kv pair.
+    /// Therefore, the kv pair is only valid for the duration of fn call.
+    #[inline]
+    fn iter<F: FnMut(EntryRef, ValuePointer) -> Result<()>>(
+        &self,
+        mut offset: u32,
+        log_entry: F,
+    ) -> Result<u32> {
+        if offset == 0 {
+            // If offset is set to zero, let's advance past the encryption key header.
+            offset = VALUE_LOG_HEADER_SIZE as u32;
+        }
 
-    type KeyRegistry = Registry;
+        let inner = self.inner.read();
+        let iter = WALIterator {
+            reader: &inner.as_slice()[(offset as usize)..],
+            safe_reader: SafeRead {
+                kv: Box::into_raw(Box::new(vec![])),
+                record_offset: Cell::new(offset),
+            },
+            base_iv: self.base_iv.as_slice(),
+            secret: self.data_key.as_ref().map(|dk| dk.data.as_ref()),
+            path: &self.path,
+            fid: self.fid,
+            encryption_algorithm: self.registry.encryption_algorithm(),
+            start_offset: offset,
+        };
+
+        iter.valid_end_offset(log_entry)
+    }
 }
 
 impl WAL {
+    pub(crate) fn read_from_buffer(
+        &self,
+        buf: &mut BytesMut,
+        start_offset: u32,
+        end_offset: u32,
+    ) -> Result<()> {
+        let mut inner = self.inner.write();
+        if (end_offset as usize) >= inner.len() {
+            // Increase the file size if we cannot accommodate this entry.
+            inner.truncate(end_offset as u64)?;
+        }
+        let start = end_offset - start_offset;
+        inner.as_mut_slice()[start as usize..end_offset as usize].copy_from_slice(buf);
+
+        self.size.store(end_offset, Ordering::SeqCst);
+        Ok(())
+    }
+
+    pub(crate) fn read(&self, p: ValuePointer) -> Result<WALReadGuard> {
+        let mut num_bytes_read = 0;
+        let offset = p.offset as u64;
+        // Do not convert sz to uint32, because the self.mmap.len() can be of size
+        // 4GB, which overflows the uint32 during conversion to make the size 0,
+        // causing the read to fail with ErrEOF.
+        let inner = self.inner.read();
+        let sz = inner.len() as u64;
+        let val_sz = p.len as u64;
+        let self_sz = self.size.load(Ordering::SeqCst) as u64;
+
+        if offset >= sz || offset + val_sz > sz || offset + val_sz > self_sz {
+            // TODO: public fmmap::error::Error::new function
+            #[cfg(feature = "metrics")]
+            {
+                use crate::metrics::{NUM_BYTES_READ, NUM_READS};
+                if self.opt.enable_metrics {
+                    NUM_READS.fetch_add(1, Ordering::SeqCst);
+                    NUM_BYTES_READ.fetch_add(num_bytes_read, Ordering::SeqCst);
+                }
+            }
+            Err(Error::EOF)
+        } else {
+            let offset = offset as usize;
+            num_bytes_read = val_sz;
+            #[cfg(feature = "metrics")]
+            {
+                use crate::metrics::{NUM_BYTES_READ, NUM_READS};
+                if self.opt.enable_metrics {
+                    NUM_READS.fetch_add(1, Ordering::SeqCst);
+                    NUM_BYTES_READ.fetch_add(num_bytes_read, Ordering::SeqCst);
+                }
+            }
+            Ok(WALReadGuard {
+                inner,
+                start: offset,
+                end: offset + val_sz as usize,
+            })
+        }
+    }
+
     fn open_in(
         path: PathBuf,
         fid: u32,
@@ -297,12 +329,12 @@ impl WAL {
         registry: Registry,
         size: usize,
         opts: LogFileOptions,
-    ) -> Result<Option<Self>> {
+    ) -> Result<Self> {
         if size < VALUE_LOG_HEADER_SIZE {
             // Every vlog file should have at least VALUE_LOG_HEADER_SIZE. If it is less than vlogHeaderSize
             // then it must have been corrupted. But no need to handle here. log replayer will truncate
             // and bootstrap the logfile. So ignoring here.
-            return Ok(None);
+            return Err(Error::CorruptedLogFile);
         }
 
         // Copy over the encryption registry data.
@@ -312,7 +344,7 @@ impl WAL {
 
         // retrieve datakey.
         registry.data_key(&key_id)
-            .map(|dk| Some(Self {
+            .map(|dk| Self {
                 inner: RwLock::new(mmap),
                 path,
                 fid,
@@ -322,7 +354,7 @@ impl WAL {
                 base_iv: buf[8..].try_into().unwrap(),
                 registry,
                 opt: opts,
-            }))
+            })
             .map_err(|e| {
                 #[cfg(feature = "tracing")]
                 {
@@ -412,6 +444,21 @@ impl WAL {
     }
 
     #[inline]
+    pub(crate) fn secret(&self) -> Option<&[u8]> {
+        self.data_key.as_ref().map(|dk| dk.data.as_ref())
+    }
+
+    #[inline]
+    pub(crate) fn base_iv(&self) -> &[u8] {
+        &self.base_iv
+    }
+
+    #[inline]
+    pub(crate) fn encryption_algorithm(&self) -> EncryptionAlgorithm {
+        self.registry.encryption_algorithm()
+    }
+
+    #[inline]
     pub(crate) fn decrypt_kv(
         src: &[u8],
         secret: Option<&[u8]>,
@@ -436,7 +483,7 @@ impl WAL {
 
     /// Generates IV by appending given offset with the base IV.
     #[inline]
-    fn generate_iv(base_iv: &[u8], offset: u32) -> [u8; BLOCK_SIZE] {
+    pub(crate) fn generate_iv(base_iv: &[u8], offset: u32) -> [u8; BLOCK_SIZE] {
         let mut iv = [0u8; BLOCK_SIZE];
         // base_iv is of 12 bytes.
         iv[..WAL_IV_SIZE].copy_from_slice(base_iv);
@@ -631,7 +678,6 @@ mod test {
             kr,
             get_test_wal_options(false),
         )
-        .unwrap()
         .unwrap();
     }
 
@@ -673,7 +719,6 @@ mod test {
             kr.clone(),
             get_test_wal_options(true),
         )
-        .unwrap()
         .unwrap();
 
         let mut buf = BytesMut::new();
@@ -694,7 +739,6 @@ mod test {
             kr,
             get_test_wal_options(false),
         )
-        .unwrap()
         .unwrap();
 
         w.iter(0, |e, _vp| {
@@ -739,7 +783,6 @@ mod test {
             kr,
             get_test_wal_options(false),
         )
-        .unwrap()
         .unwrap();
         let mut buf = BytesMut::new();
         let ent = Entry::new_from_kv(

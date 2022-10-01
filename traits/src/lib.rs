@@ -4,17 +4,19 @@ use std::path::PathBuf;
 
 use vela_options::{
     vpb::{
-        kvstructs::{bytes::BytesMut, Entry, EntryRef, Key, Value, ValuePointer},
-        DataKey, EncryptionAlgorithm,
+        kvstructs::{
+            bytes::{Bytes, BytesMut},
+            request::Request,
+            Entry, EntryRef, Key, Value, ValuePointer,
+        },
+        DataKey,
     },
-    KeyRegistryOptions, LogFileOptions, MemTableOptions,
+    KeyRegistryOptions, LogFileOptions, MemTableOptions, ValueLogOptions,
 };
 use vela_utils::ref_counter::RefCounter;
 
-pub trait KeyRegistry: Sized + Send + Sync + 'static {
+pub trait KeyRegistry: Clone + Sized + Send + Sync + 'static {
     type Error: std::error::Error;
-
-    fn encryption_algorithm(&self) -> EncryptionAlgorithm;
 
     /// Opens key registry if it exists, otherwise it'll create key registry
     /// and returns key registry.
@@ -35,14 +37,8 @@ pub trait KeyRegistry: Sized + Send + Sync + 'static {
     /// It'll create new datakey.
     fn latest_data_key(&self) -> Result<DataKey, Self::Error>;
 
+    /// Inserts a new datakey into the registry
     fn insert(&self, dk: DataKey) -> Result<u64, Self::Error>;
-
-    fn valid_sanity(
-        e_sanity_txt: &[u8],
-        secret: &[u8],
-        iv: &[u8],
-        algo: EncryptionAlgorithm,
-    ) -> Result<bool, Self::Error>;
 }
 
 pub trait LogFile: Sized + Send + Sync + 'static {
@@ -58,7 +54,7 @@ pub trait LogFile: Sized + Send + Sync + 'static {
         fid: u32,
         registry: Self::KeyRegistry,
         opts: LogFileOptions,
-    ) -> Result<Option<Self>, Self::Error>;
+    ) -> Result<Self, Self::Error>;
 
     /// Syncs the LogFile file.
     fn sync(&self) -> Result<(), Self::Error>;
@@ -69,8 +65,8 @@ pub trait LogFile: Sized + Send + Sync + 'static {
     /// Truncates the LogFile file.
     fn truncate(&self, end: u64) -> Result<(), Self::Error>;
 
-    /// Read from the LogFile file.
-    fn read(&self, p: ValuePointer) -> Result<Vec<u8>, Self::Error>;
+    // /// Read from the log file
+    // fn read(&self, p: ValuePointer) -> Result<Vec<u8>, Self::Error>;
 
     /// Writes the entry to the LogFile file.
     fn write_entry(&self, buf: &mut BytesMut, ent: &Entry) -> Result<(), Self::Error>;
@@ -117,13 +113,55 @@ pub trait Oracle: Sized + Send + Sync + 'static {
     fn read_timestamp(&self) -> u64;
 }
 
+pub trait ValueLog: Sized + Send + Sync + 'static {
+    type Database: Database<KeyRegistry = <Self::LogFile as LogFile>::KeyRegistry>;
+    type GC: ValueLogGC<Error = Self::Error>;
+    type LogFile: LogFile;
+    type Error: std::error::Error + From<<Self::Database as Database>::Error>;
+
+    fn open(
+        db: RefCounter<Self::Database>,
+        opts: ValueLogOptions,
+    ) -> Result<Option<Self>, Self::Error>;
+
+    /// Create and append new log file
+    fn append(&self) -> Result<RefCounter<Self::LogFile>, Self::Error>;
+
+    fn create(
+        dir_path: &PathBuf,
+        registry: <Self::LogFile as LogFile>::KeyRegistry,
+        max_fid: u32,
+        opts: LogFileOptions,
+    ) -> core::result::Result<Self::LogFile, Self::Error>;
+
+    /// Reads the value log at a given location.
+    fn read(&self, vp: ValuePointer) -> Result<Bytes, Self::Error>;
+
+    fn write(&self, reqs: &mut [Request]) -> Result<(), Self::Error>;
+
+    /// Syncs log file.
+    fn sync(&self) -> Result<(), Self::Error>;
+}
+
+pub trait ValueLogGC: Sized + Send + Sync + 'static {
+    type ValueLog: ValueLog<Error = Self::Error>;
+    type Error: std::error::Error
+        + From<<<Self::ValueLog as ValueLog>::Database as Database>::Error>;
+
+    fn run(self, discard_ratio: f64) -> Result<(), Self::Error>;
+}
+
 pub trait Database: Sized + Send + Sync + 'static {
     type Error: std::error::Error
         + From<<Self::KeyRegistry as KeyRegistry>::Error>
         + Into<<Self::KeyRegistry as KeyRegistry>::Error>
         + From<<Self::MemoryTable as MemoryTable>::Error>
-        + Into<<Self::MemoryTable as MemoryTable>::Error>;
+        + Into<<Self::MemoryTable as MemoryTable>::Error>
+        + From<<Self::ValueLog as ValueLog>::Error>
+        + Into<<Self::ValueLog as ValueLog>::Error>;
+
     type KeyRegistry: KeyRegistry;
+    type ValueLog: ValueLog;
     type MemoryTable: MemoryTable;
     type Oracle: Oracle;
 
@@ -189,4 +227,8 @@ pub trait Database: Sized + Send + Sync + 'static {
     fn create_mem_table(&self) -> Result<Self::MemoryTable, Self::Error>;
 
     fn file_path(&self) -> Result<PathBuf, Self::Error>;
+
+    fn value_threshold(&self) -> u64;
+
+    fn update_threshold(&self, threshold: Vec<i64>);
 }

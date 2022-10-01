@@ -81,7 +81,7 @@ impl CloserInner {
     fn new_with_initial(initial: usize) -> Self {
         let (ctx, cancel) = CancelContext::new();
         Self {
-            wg: WaitGroup::new().add(initial),
+            wg: WaitGroup::from(initial),
             ctx,
             cancel,
         }

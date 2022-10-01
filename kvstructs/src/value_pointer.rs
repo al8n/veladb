@@ -1,5 +1,5 @@
 /// ValuePointer points to the value in value log
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(C)]
 pub struct ValuePointer {
     /// value log fid

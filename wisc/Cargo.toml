@@ -27,6 +27,6 @@ vela-options = { version = "0.0.0", path = "../options" }
 vela-utils = { version = "0.1", path = "../utils", default-features = false, features = ["ref_counter"] }
 vela-traits = { version = "0.0.0", path = "../traits" }
 vpb = { version = "0.1", path = "../vpb", default-features = false, features = ["aes"] }
+scopeguard = "1.1"
 
 [dev-dependencies]
-scopeguard = "1.1"
