@@ -7,6 +7,7 @@ pub enum Error {
     #[cfg(feature = "std")]
     Any(Box<dyn std::error::Error + Send + Sync>),
     CorruptedLogFile,
+    EmptyValue,
     EncryptError(vpb::encrypt::EncryptError),
     InvalidEncryptionKeyLength(usize),
     InvalidDataKeyID(u64),
@@ -112,6 +113,7 @@ impl core::fmt::Display for Error {
             Error::InvalidValuePointer {current, pointer} => write!(f, "invalid value pointer offset: {pointer} greater than current offset: {current}"),
             Error::InvalidRead { len, range } => write!(f, "invalid read: len: {len} read at: [{}..{}]", range.start, range.end),
             Error::MaxValueLogSize { estimated_offset, max_value_log_size } => write!(f, "wisc: request size offset {estimated_offset} is bigger than maximum offset {max_value_log_size}"),
+            Error::EmptyValue => todo!(),
         }
     }
 }

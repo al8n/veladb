@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use skl::kvstructs::ValueExt;
 use vela_options::{
     vpb::{
         kvstructs::{
@@ -113,11 +114,26 @@ pub trait Oracle: Sized + Send + Sync + 'static {
     fn read_timestamp(&self) -> u64;
 }
 
+/// ValueGuard is used for reading value from the value log,
+/// this give the user ability to decide when to unlock the underlying log file.
+///
+/// Structures which implement this trait should contains a `RwLockReadGuard` or `RwLockWriteGuard` or `MutexGuard`,
+/// which guard the underlying log file.
+pub trait ValueGuard: ValueExt {
+    fn into_value(self) -> Value;
+}
+
 pub trait ValueLog: Sized + Send + Sync + 'static {
     type Database: Database<KeyRegistry = <Self::LogFile as LogFile>::KeyRegistry>;
     type GC: ValueLogGC<Error = Self::Error>;
     type LogFile: LogFile;
     type Error: std::error::Error + From<<Self::Database as Database>::Error>;
+
+    /// ValueGuard is used for reading value from the value log,
+    /// this give the user ability to decide when to unlock.
+    type ValueGuard<'a>: ValueGuard
+    where
+        Self: 'a;
 
     fn open(
         db: RefCounter<Self::Database>,
@@ -135,9 +151,14 @@ pub trait ValueLog: Sized + Send + Sync + 'static {
     ) -> core::result::Result<Self::LogFile, Self::Error>;
 
     /// Reads the value log at a given location.
-    fn read(&self, vp: ValuePointer) -> Result<Bytes, Self::Error>;
+    fn read(&self, vp: ValuePointer) -> Result<Self::ValueGuard<'_>, Self::Error>;
 
     fn write(&self, reqs: &mut [Request]) -> Result<(), Self::Error>;
+
+    fn rewrite(&self, lf: Self::LogFile) -> Result<(), Self::Error>;
+
+    /// Remove all `LogFile`.
+    fn remove_all(&self) -> Result<usize, Self::Error>;
 
     /// Syncs log file.
     fn sync(&self) -> Result<(), Self::Error>;
@@ -164,6 +185,10 @@ pub trait Database: Sized + Send + Sync + 'static {
     type ValueLog: ValueLog;
     type MemoryTable: MemoryTable;
     type Oracle: Oracle;
+
+    /// Applies a list of [`Entry`]. If a request level error occurs it
+    /// will be returned.
+    fn batch_set(&self, entries: Vec<Entry>) -> Result<(), Self::Error>;
 
     /// Returns a new Database
     fn open(&self, path: &str) -> Result<Self, Self::Error>;

@@ -248,6 +248,8 @@ pub struct ValueLogOptions {
     /// Not recommended for most users.
     pub managed_txns: bool,
     pub max_entries: u32,
+    pub max_batch_size: u64,
+    pub max_batch_count: u64,
 }
 
 impl ValueLogOptions {
@@ -369,6 +371,28 @@ impl ValueLogOptions {
     #[inline]
     pub const fn set_max_entries(mut self, max_entries: u32) -> Self {
         self.max_entries = max_entries;
+        self
+    }
+
+    #[inline]
+    pub const fn max_batch_size(&self) -> u64 {
+        self.max_batch_size
+    }
+
+    #[inline]
+    pub const fn set_max_batch_size(mut self, max_batch_size: u64) -> Self {
+        self.max_batch_size = max_batch_size;
+        self
+    }
+
+    #[inline]
+    pub const fn max_batch_count(&self) -> u64 {
+        self.max_batch_count
+    }
+
+    #[inline]
+    pub const fn set_max_batch_count(mut self, max_batch_count: u64) -> Self {
+        self.max_batch_count = max_batch_count;
         self
     }
 }

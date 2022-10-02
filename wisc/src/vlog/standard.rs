@@ -1,9 +1,12 @@
 use super::{Error, Result, MAX_VALUE_LOG_SIZE, VALUE_LOG_FILE_EXTENSION};
-use crate::{is_deleted_or_expired, Registry, VALUE_LOG_HEADER_SIZE, WAL};
-use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use crate::{is_deleted_or_expired, ReadGuard, Registry, VALUE_LOG_HEADER_SIZE, WAL};
+use core::{
+    cell::UnsafeCell,
+    sync::atomic::{AtomicI32, AtomicU32, Ordering},
+};
 use crossbeam_channel::{select, Receiver, Sender};
 use fmmap::MetaDataExt;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::{collections::HashMap, path::PathBuf};
 use vela_options::{LogFileOptions, ValueLogOptions};
 use vela_traits::{Database, LogFile, Oracle, ValueLog, ValueLogGC};
@@ -13,7 +16,7 @@ use vpb::{
     kvstructs::{
         bytes::{Bytes, BytesMut},
         request::Request,
-        EntryRef, Header, Key, KeyExt, Value, ValueExt, ValuePointer, OP,
+        Entry, EntryRef, Header, Key, KeyExt, Value, ValueExt, ValuePointer, OP,
     },
 };
 
@@ -30,9 +33,39 @@ struct Inner {
     next_gc_fid: u32,
 }
 
+struct GuardableInner {
+    inner: UnsafeCell<Inner>,
+    guard: RwLock<()>,
+}
+
+impl GuardableInner {
+    #[inline]
+    fn rlock(&self) -> RwLockReadGuard<'_, ()> {
+        self.guard.read()
+    }
+
+    #[inline]
+    fn wlock(&self) -> RwLockWriteGuard<'_, ()> {
+        self.guard.write()
+    }
+
+    /// Safety: this method will always called after holding a read/write lock
+    #[inline]
+    fn fetch(&self) -> &Inner {
+        unsafe { &*self.inner.get() }
+    }
+
+    /// Safety: this method will always called after holding a read/write lock
+    #[allow(clippy::mut_from_ref)]
+    #[inline]
+    fn fetch_mut(&self) -> &mut Inner {
+        unsafe { &mut *self.inner.get() }
+    }
+}
+
 pub struct WiscValueLog<DB> {
     // guards our view of which files exist, which to be deleted, how many active iterators
-    inner: RefCounter<RwLock<Inner>>,
+    inner: RefCounter<GuardableInner>,
     db: RefCounter<DB>,
 
     // A refcount of iterators -- when this hits zero, we can delete the filesToBeDeleted.
@@ -46,6 +79,9 @@ pub struct WiscValueLog<DB> {
     garbage_tx: Sender<()>,
     discard_stats: DiscardStats,
 }
+
+unsafe impl<DB> Send for WiscValueLog<DB> {}
+unsafe impl<DB> Sync for WiscValueLog<DB> {}
 
 impl<DB> WiscValueLog<DB> {
     #[inline]
@@ -161,6 +197,8 @@ where
 
     type Error = Error;
 
+    type ValueGuard<'a> = ReadGuard<'a>;
+
     fn open(
         db: RefCounter<Self::Database>,
         opts: ValueLogOptions,
@@ -197,14 +235,17 @@ where
                 garbage_tx: todo!(),
                 opts,
                 num_active_iters: AtomicI32::new(0),
-                writable_log_offset: AtomicU32::new(0),
-                inner: RefCounter::new(RwLock::new(Inner {
-                    files_map,
-                    files_to_be_deleted: Vec::new(),
-                    max_fid,
-                    next_gc_fid,
-                })),
                 num_entries_written: AtomicU32::new(0),
+                writable_log_offset: AtomicU32::new(0),
+                inner: RefCounter::new(GuardableInner {
+                    inner: UnsafeCell::new(Inner {
+                        files_map,
+                        max_fid,
+                        next_gc_fid,
+                        files_to_be_deleted: Vec::new(),
+                    }),
+                    guard: RwLock::new(()),
+                }),
                 db,
             }));
         }
@@ -246,12 +287,15 @@ where
                     num_entries_written: AtomicU32::new(0),
                     num_active_iters: AtomicI32::new(0),
                     writable_log_offset: AtomicU32::new(VALUE_LOG_HEADER_SIZE as u32),
-                    inner: RefCounter::new(RwLock::new(Inner {
-                        files_map,
-                        files_to_be_deleted: Vec::new(),
-                        max_fid,
-                        next_gc_fid,
-                    })),
+                    inner: RefCounter::new(GuardableInner {
+                        inner: UnsafeCell::new(Inner {
+                            files_map,
+                            files_to_be_deleted: Vec::new(),
+                            max_fid,
+                            next_gc_fid,
+                        }),
+                        guard: RwLock::new(()),
+                    }),
                     db,
                 })
             })
@@ -262,6 +306,49 @@ where
                 }
                 e
             })
+    }
+
+    fn append(&self) -> Result<RefCounter<Self::LogFile>> {
+        let inner = self.inner.fetch();
+        let fid = inner.max_fid + 1;
+        let path = self.fpath(fid);
+        let flags = {
+            #[cfg(unix)]
+            {
+                (rustix::fs::OFlags::RDWR | rustix::fs::OFlags::CREATE | rustix::fs::OFlags::EXCL)
+                    .bits()
+            }
+
+            #[cfg(windows)]
+            {
+                (rustix::fs::OFlags::RDWR | rustix::fs::OFlags::CREATE | rustix::fs::OFlags::EXCL)
+                    .bits() as u32
+            }
+        };
+
+        let _mu = self.inner.wlock();
+        let inner = self.inner.fetch_mut();
+        <WAL as LogFile>::open(
+            path,
+            flags,
+            fid,
+            self.db.registry().clone(),
+            LogFileOptions::from(&self.opts),
+        )
+        .map(|lf| {
+            let lf = RefCounter::new(lf);
+            inner.files_map.insert(fid, lf.clone());
+            inner.max_fid = fid;
+
+            // writableLogOffset is only written by write func, by read by Read func.
+            // To avoid a race condition, all reads and updates to this variable must be
+            // done via atomics.
+            self.writable_log_offset
+                .store(VALUE_LOG_HEADER_SIZE as u32, Ordering::SeqCst);
+            self.num_entries_written.store(0, Ordering::SeqCst);
+            lf
+        })
+        .map_err(From::from)
     }
 
     fn create(
@@ -288,8 +375,9 @@ where
         <WAL as LogFile>::open(path, flags, max_fid, registry, opts)
     }
 
-    fn read(&self, vp: ValuePointer) -> Result<Bytes> {
-        let inner = RwLock::read(&self.inner);
+    fn read(&self, vp: ValuePointer) -> Result<Self::ValueGuard<'_>> {
+        let _rmu = self.inner.rlock();
+        let inner = self.inner.fetch();
         match inner.files_map.get(&vp.fid) {
             Some(lf) => {
                 // Check for valid offset if we are reading from writable log.
@@ -306,7 +394,7 @@ where
                     }
                 }
 
-                let guard = WAL::read(lf, vp)?;
+                let mut guard = WAL::read(lf, vp)?;
                 let buf = guard.data();
                 let buf_size = buf.len() - core::mem::size_of::<u32>();
                 if self.opts.verify_value_checksum() {
@@ -345,12 +433,20 @@ where
                     });
                 }
 
-                Ok(kv.slice(klen..klen + vlen))
+                guard.val = Value::with_all_fields(
+                    header.get_meta(),
+                    header.get_user_meta(),
+                    header.get_expires_at(),
+                    0,
+                    kv.slice(klen..klen + vlen),
+                );
+                Ok(guard)
             }
             None => Err(Error::LogFileNotFound(vp.fid)),
         }
     }
 
+    /// Write is thread-unsafe by design and should not be called concurrently.
     fn write(&self, reqs: &mut [Request]) -> Result<()> {
         if self.opts.in_memory() || self.opts.managed_txns() {
             // Don't do value log writes in managed mode.
@@ -367,11 +463,13 @@ where
             e
         })?;
 
-        let inner = RwLock::read(&self.inner);
+        let rmu = self.inner.rlock();
+
+        let inner = self.inner.fetch();
 
         let max_fid = inner.max_fid;
         let mut cur_lf = inner.files_map.get(&max_fid).unwrap().clone();
-        drop(inner);
+        drop(rmu);
 
         let sync = |lf: &WAL| {
             if self.opts.sync_writes() {
@@ -510,7 +608,9 @@ where
             return Ok(());
         }
 
-        let inner = RwLock::read(&self.inner);
+        let _mu = self.inner.rlock();
+
+        let inner = self.inner.fetch();
         let max_fid = inner.max_fid;
 
         match inner.files_map.get(&max_fid) {
@@ -522,45 +622,243 @@ where
         }
     }
 
-    fn append(&self) -> Result<RefCounter<Self::LogFile>> {
-        let mut inner = RwLock::write(&self.inner);
-        let fid = inner.max_fid + 1;
-        let path = self.fpath(fid);
-        let flags = {
-            #[cfg(unix)]
-            {
-                (rustix::fs::OFlags::RDWR | rustix::fs::OFlags::CREATE | rustix::fs::OFlags::EXCL)
-                    .bits()
+    fn rewrite(&self, lf: Self::LogFile) -> Result<()> {
+        let _mu = self.inner.rlock();
+        let inner = self.inner.fetch();
+        for fid in &inner.files_to_be_deleted {
+            if *fid == lf.fid {
+                return Err(Error::AlreadyMarkedDeletion(*fid));
+            }
+        }
+
+        let max_fid = inner.max_fid;
+        assert!(
+            lf.fid <= max_fid,
+            "fid to move: {}. Current max fid: {}",
+            lf.fid,
+            max_fid
+        );
+        drop(_mu);
+
+        #[cfg(feature = "tracing")]
+        {
+            tracing::info!(target: "value_log", "Rewriting value log file: {}", lf.fid);
+        }
+
+        let mut wb = Vec::with_capacity(1000);
+        let mut size = 0;
+        let mut count = 0;
+        let mut moved = 0;
+        let mut fe = |e: EntryRef| {
+            count += 1;
+            if count % 100_000 == 0 {
+                #[cfg(feature = "tracing")]
+                {
+                    tracing::debug!(target: "value_log", "processing entry {count}");
+                }
             }
 
-            #[cfg(windows)]
-            {
-                (rustix::fs::OFlags::RDWR | rustix::fs::OFlags::CREATE | rustix::fs::OFlags::EXCL)
-                    .bits() as u32
+            let ts = self.db.orc().read_timestamp();
+            let key = e.key.parse_key();
+            let vs = self.db.get(Key::copy_from_slice(key).with_timestamp(ts))?;
+            if discard_entry(e, &vs) {
+                return Ok(());
+            }
+
+            // Value is still present in value log.
+            let val = vs.parse_value();
+            if val.is_empty() {
+                #[cfg(feature = "tracing")]
+                {
+                    tracing::error!(target: "value_log", "empty value: {:?}", vs);
+                }
+                return Err(Error::EmptyValue);
+            }
+
+            let vp = ValuePointer::decode(val);
+
+            // If the entry found from the LSM Tree points to a newer vlog file, don't do anything.
+            if vp.fid > lf.fid {
+                return Ok(());
+            }
+
+            // If the entry found from the LSM Tree points to an offset greater than the one
+            // read from vlog, don't do anything.
+            if vp.offset > e.get_offset() {
+                return Ok(());
+            }
+
+            // If the entry read from LSM Tree and vlog file point to the same vlog file and offset,
+            // insert them back into the DB.
+            // NOTE: It might be possible that the entry read from the LSM Tree points to
+            // an older vlog file. See the comments in the else part.
+            if vp.fid == lf.fid && vp.offset == e.offset {
+                moved += 1;
+                // This new entry only contains the key, and a pointer to the value.
+                let mut new_entry = Entry::new_from_kv(e.key.to_key(), e.val.to_value());
+
+                // Remove only the bitValuePointer and transaction markers. We
+                // should keep the other bits.
+                new_entry.set_meta(
+                    e.get_meta() & !(OP::BIT_VALUE_POINTER | OP::BIT_TXN | OP::BIT_FIN_TXN).bits(),
+                );
+                new_entry.set_user_meta(e.get_user_meta());
+                new_entry.set_expires_at(e.get_expires_at());
+
+                let mut es = new_entry.estimate_size_and_set_threshold(self.db.value_threshold());
+                // Consider size of value as well while considering the total size
+                // of the batch. There have been reports of high memory usage in
+                // rewrite because we don't consider the value size. See #1292.
+                es += e.val.parse_value().len() as u64;
+
+                // Ensure length and size of wb is within transaction limits.
+                if (wb.len() as u64) + 1 >= self.opts.max_batch_count()
+                    || size + es >= self.opts.max_batch_size()
+                {
+                    let mut batch = Vec::with_capacity(1000);
+                    core::mem::swap(&mut batch, &mut wb);
+                    self.db.batch_set(batch)?;
+                    size = 0;
+                } else {
+                    wb.push(new_entry);
+                    size += es;
+                }
+            } else {
+                // It might be possible that the entry read from LSM Tree points to
+                // an older vlog file.  This can happen in the following situation.
+                // Assume DB is opened with
+                // numberOfVersionsToKeep=1
+                //
+                // Now, if we have ONLY one key in the system "FOO" which has been
+                // updated 3 times and the same key has been garbage collected 3
+                // times, we'll have 3 versions of the movekey
+                // for the same key "FOO".
+                //
+                // NOTE: moveKeyi is the gc'ed version of the original key with version i
+                // We're calling the gc'ed keys as moveKey to simplify the
+                // explanantion. We used to add move keys but we no longer do that.
+                //
+                // Assume we have 3 move keys in L0.
+                // - moveKey1 (points to vlog file 10),
+                // - moveKey2 (points to vlog file 14) and
+                // - moveKey3 (points to vlog file 15).
+                //
+                // Also, assume there is another move key "moveKey1" (points to
+                // vlog file 6) (this is also a move Key for key "FOO" ) on upper
+                // levels (let's say 3). The move key "moveKey1" on level 0 was
+                // inserted because vlog file 6 was GCed.
+                //
+                // Here's what the arrangement looks like
+                // L0 => (moveKey1 => vlog10), (moveKey2 => vlog14), (moveKey3 => vlog15)
+                // L1 => ....
+                // L2 => ....
+                // L3 => (moveKey1 => vlog6)
+                //
+                // When L0 compaction runs, it keeps only moveKey3 because the number of versions
+                // to keep is set to 1. (we've dropped moveKey1's latest version)
+                //
+                // The new arrangement of keys is
+                // L0 => ....
+                // L1 => (moveKey3 => vlog15)
+                // L2 => ....
+                // L3 => (moveKey1 => vlog6)
+                //
+                // Now if we try to GC vlog file 10, the entry read from vlog file
+                // will point to vlog10 but the entry read from LSM Tree will point
+                // to vlog6. The move key read from LSM tree will point to vlog6
+                // because we've asked for version 1 of the move key.
+                //
+                // This might seem like an issue but it's not really an issue
+                // because the user has set the number of versions to keep to 1 and
+                // the latest version of moveKey points to the correct vlog file
+                // and offset. The stale move key on L3 will be eventually dropped
+                // by compaction because there is a newer versions in the upper
+                // levels.
+            }
+            Ok(())
+        };
+
+        lf.iter(0, |e, _| fe(e))?;
+        let mut batch_size = 1024;
+        let mut loops = 0;
+        let mut i = 0;
+        let original_wb_len = wb.len();
+        while i < wb.len() {
+            loops += 1;
+            if batch_size == 0 {
+                #[cfg(feature = "tracing")]
+                {
+                    tracing::warn!(target: "value_log", "we shouldn't reach batch size of zero.");
+                }
+                return Err(Error::NoRewrite);
+            }
+
+            let end = (i + batch_size).min(wb.len());
+            self.db.batch_set(wb.drain(..end).collect())?;
+            i += batch_size;
+        }
+        #[cfg(feature = "tracing")]
+        {
+            tracing::info!(target: "value_log", "processed {} entries in {} loops", original_wb_len, loops);
+            tracing::info!(target: "value_log", "total entries: {}, moved: {}", count, moved);
+            tracing::info!("removing fid: {}", lf.fid);
+        }
+
+        // Entries written to LSM. Remove the older file now.
+        let delete_file_now = {
+            let mu = self.inner.wlock();
+            let inner = self.inner.fetch_mut();
+
+            if self.num_active_iters.load(Ordering::SeqCst) == 0 {
+                inner.files_map.remove(&lf.fid);
+                drop(mu);
+                true
+            } else {
+                inner.files_to_be_deleted.push(lf.fid);
+                drop(mu);
+                false
             }
         };
 
-        <WAL as LogFile>::open(
-            path,
-            flags,
-            fid,
-            self.db.registry().clone(),
-            LogFileOptions::from(&self.opts),
-        )
-        .map(|lf| {
-            let lf = RefCounter::new(lf);
-            inner.files_map.insert(fid, lf.clone());
-            inner.max_fid = fid;
+        if delete_file_now {
+            let mu = lf.wlock();
+            // Delete fid from discard stats as well.
+            self.discard_stats.update(lf.fid, -1);
+            drop(mu);
+        }
 
-            // writableLogOffset is only written by write func, by read by Read func.
-            // To avoid a race condition, all reads and updates to this variable must be
-            // done via atomics.
-            self.writable_log_offset
-                .store(VALUE_LOG_HEADER_SIZE as u32, Ordering::SeqCst);
-            self.num_entries_written.store(0, Ordering::SeqCst);
-            lf
-        })
-        .map_err(From::from)
+        Ok(())
+    }
+
+    fn remove_all(&self) -> Result<usize> {
+        // If db is opened in InMemory mode, we don't need to do anything since there are no vlog files.
+        if self.opts.in_memory() {
+            return Ok(0);
+        }
+
+        // We don't want to block dropAll on any pending transactions. So, don't worry about iterator
+        // count.
+        let mut count = 0;
+        let _mu = self.inner.wlock();
+        let inner = self.inner.fetch_mut();
+        for lf in inner.files_map.values() {
+            let mu = lf.wlock();
+            // Delete fid from discard stats as well.
+            self.discard_stats.update(lf.fid, -1);
+            drop(mu);
+            count += 1;
+        }
+
+        inner.files_map.clear();
+        inner.max_fid = 0;
+        drop(_mu);
+        #[cfg(feature = "tracing")]
+        {
+            tracing::info!(target: "value_log", "creating value log file: 1");
+        }
+
+        // Called while writes are stopped.
+        self.append().map(|_| count)
     }
 }
 
@@ -570,7 +868,7 @@ impl<DB> Drop for WiscValueLog<DB> {
             return;
         }
 
-        let inner = self.inner.read();
+        let inner = self.inner.fetch();
         for (id, lf) in inner.files_map.iter() {
             if !self.opts.read_only() && id == &inner.max_fid {
                 let woffset = self.writable_log_offset.load(Ordering::SeqCst);
@@ -581,7 +879,7 @@ impl<DB> Drop for WiscValueLog<DB> {
 }
 
 #[inline]
-fn discard_entry(e: EntryRef, v: Value) -> bool {
+fn discard_entry(e: EntryRef, v: &Value) -> bool {
     let meta = v.get_meta();
     let version = v.get_version();
     if version != e.get_key().parse_timestamp() {
@@ -766,7 +1064,7 @@ where
             self.db
                 .get(Key::copy_from_slice(key).with_timestamp(ts))
                 .map(|vs| {
-                    if discard_entry(ent, vs) {
+                    if discard_entry(ent, &vs) {
                         discarded += 1;
                     }
                 })

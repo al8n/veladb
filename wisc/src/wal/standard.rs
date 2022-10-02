@@ -4,11 +4,11 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 use fmmap::{MetaDataExt, MmapFileExt, MmapFileMut, MmapFileMutExt, Options};
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use rand::{thread_rng, RngCore};
 use std::path::{Path, PathBuf};
 use vela_options::LogFileOptions;
-use vela_traits::{KeyRegistry, LogFile};
+use vela_traits::{KeyRegistry, LogFile, ValueGuard};
 use vpb::{
     encrypt::{Encryptor, BLOCK_SIZE},
     kvstructs::{
@@ -46,15 +46,66 @@ unsafe impl Sync for WAL {}
 /// Safety: the `write_at` is only accessed when inner lock is hold.
 unsafe impl Send for WAL {}
 
-pub struct WALReadGuard<'a> {
+#[allow(clippy::declare_interior_mutable_const)]
+const EMPTY_BYTES: Value = Value::new();
+
+pub struct ReadGuard<'a> {
     start: usize,
     end: usize,
+    pub(crate) val: Value,
     inner: RwLockReadGuard<'a, MmapFileMut>,
 }
 
-impl<'a> WALReadGuard<'a> {
-    pub fn data(&self) -> &[u8] {
+impl<'a> ValueExt for ReadGuard<'a> {
+    fn parse_value(&self) -> &[u8] {
+        self.val.parse_value()
+    }
+
+    fn parse_value_to_bytes(&self) -> Bytes {
+        self.val.parse_value_to_bytes()
+    }
+
+    fn get_meta(&self) -> u8 {
+        self.val.get_meta()
+    }
+
+    fn get_user_meta(&self) -> u8 {
+        self.val.get_user_meta()
+    }
+
+    fn get_expires_at(&self) -> u64 {
+        self.val.get_expires_at()
+    }
+}
+
+impl<'a> ValueGuard for ReadGuard<'a> {
+    fn into_value(self) -> Value {
+        self.val
+    }
+}
+
+impl<'a> core::ops::Deref for ReadGuard<'a> {
+    type Target = Value;
+
+    fn deref(&self) -> &Self::Target {
+        &self.val
+    }
+}
+
+impl<'a> core::ops::DerefMut for ReadGuard<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.val
+    }
+}
+
+impl<'a> ReadGuard<'a> {
+    pub(crate) fn data(&self) -> &[u8] {
         &self.inner.as_slice()[self.start..self.end]
+    }
+
+    #[inline]
+    pub fn into_value(self) -> Value {
+        self.val
     }
 }
 
@@ -263,6 +314,10 @@ impl LogFile for WAL {
 }
 
 impl WAL {
+    pub(crate) fn wlock(&self) -> RwLockWriteGuard<MmapFileMut> {
+        self.inner.write()
+    }
+
     pub(crate) fn read_from_buffer(
         &self,
         buf: &mut BytesMut,
@@ -281,7 +336,7 @@ impl WAL {
         Ok(())
     }
 
-    pub(crate) fn read(&self, p: ValuePointer) -> Result<WALReadGuard> {
+    pub(crate) fn read(&self, p: ValuePointer) -> Result<ReadGuard> {
         let mut num_bytes_read = 0;
         let offset = p.offset as u64;
         // Do not convert sz to uint32, because the self.mmap.len() can be of size
@@ -314,10 +369,11 @@ impl WAL {
                     NUM_BYTES_READ.fetch_add(num_bytes_read, Ordering::SeqCst);
                 }
             }
-            Ok(WALReadGuard {
+            Ok(ReadGuard {
                 inner,
                 start: offset,
                 end: offset + val_sz as usize,
+                val: EMPTY_BYTES,
             })
         }
     }

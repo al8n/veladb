@@ -95,6 +95,18 @@ impl Entry {
         self.val.meta = meta;
     }
 
+    /// Adds user meta to Entry
+    #[inline]
+    pub fn set_user_meta(&mut self, meta: u8) {
+        self.val.user_meta = meta;
+    }
+
+    /// Sets the `expires_at` for the Entry
+    #[inline]
+    pub fn set_expires_at(&mut self, expires_at: u64) {
+        self.val.expires_at = expires_at;
+    }
+
     /// Adds time to live duration to Entry e. Entry stored with a TTL would automatically expire
     /// after the time has elapsed, and will be eligible for garbage collection.
     #[inline]

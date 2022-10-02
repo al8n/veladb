@@ -56,6 +56,15 @@ impl RcValue {
     }
 }
 
+impl Clone for RcValue {
+    fn clone(&self) -> Self {
+        Self {
+            val: self.val,
+            refs: self.refs.clone(),
+        }
+    }
+}
+
 impl ValueExt for RcValue {
     fn parse_value(&self) -> &[u8] {
         self.val.parse_value()
