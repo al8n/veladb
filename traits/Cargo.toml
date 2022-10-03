@@ -38,4 +38,4 @@ lz4-std = ["vela-options/lz4-std"]
 fmmap = "0.3"
 skl = { version = "0.3", path = "../skl"}
 vela-options = { version = "0.0.0", path = "../options" }
-vela-utils = { version = "0.1.0", path = "../utils", features = ["ref_counter"] }
+vela-utils = { version = "0.1.0", path = "../utils", features = ["ref_counter", "closer"] }

@@ -5,16 +5,12 @@ use std::path::PathBuf;
 use skl::kvstructs::ValueExt;
 use vela_options::{
     vpb::{
-        kvstructs::{
-            bytes::{Bytes, BytesMut},
-            request::Request,
-            Entry, EntryRef, Key, Value, ValuePointer,
-        },
+        kvstructs::{bytes::BytesMut, request::Request, Entry, EntryRef, Key, Value, ValuePointer},
         DataKey,
     },
     KeyRegistryOptions, LogFileOptions, MemTableOptions, ValueLogOptions,
 };
-use vela_utils::ref_counter::RefCounter;
+use vela_utils::{closer::Closer, ref_counter::RefCounter};
 
 pub trait KeyRegistry: Clone + Sized + Send + Sync + 'static {
     type Error: std::error::Error;
@@ -143,25 +139,27 @@ pub trait ValueLog: Sized + Send + Sync + 'static {
     /// Create and append new log file
     fn append(&self) -> Result<RefCounter<Self::LogFile>, Self::Error>;
 
-    fn create(
-        dir_path: &PathBuf,
+    /// Create new log file
+    fn create<P: AsRef<std::path::Path>>(
+        dir_path: &P,
         registry: <Self::LogFile as LogFile>::KeyRegistry,
         max_fid: u32,
         opts: LogFileOptions,
-    ) -> core::result::Result<Self::LogFile, Self::Error>;
+    ) -> Result<Self::LogFile, Self::Error>;
 
     /// Reads the value log at a given location.
     fn read(&self, vp: ValuePointer) -> Result<Self::ValueGuard<'_>, Self::Error>;
 
+    /// Writes the values to the value log.
     fn write(&self, reqs: &mut [Request]) -> Result<(), Self::Error>;
-
-    fn rewrite(&self, lf: Self::LogFile) -> Result<(), Self::Error>;
 
     /// Remove all `LogFile`.
     fn remove_all(&self) -> Result<usize, Self::Error>;
 
     /// Syncs log file.
     fn sync(&self) -> Result<(), Self::Error>;
+
+    fn wait_on_gc(&self, closer: Closer) -> Result<(), Self::Error>;
 }
 
 pub trait ValueLogGC: Sized + Send + Sync + 'static {
