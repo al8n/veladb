@@ -317,6 +317,17 @@ impl RawTable {
         self.in_memory
     }
 
+    #[inline]
+    pub(super) const fn table_size(&self) -> usize {
+        self.table_size
+    }
+
+    // TODO: optimize clone on RefCounter
+    #[inline]
+    pub(super) fn stale_data_size(&self) -> usize {
+        self.fetch_index().stale_data_size as usize
+    }
+
     /// Splits the table into at least n ranges based on the block offsets.
     pub(super) fn key_splits(&self, idx: usize, prefix: &[u8]) -> Vec<Key> {
         let mut res = Vec::new();

@@ -17,10 +17,13 @@ pub use oracle::*;
 mod mem_table;
 pub use mem_table::*;
 
+mod levels;
+pub use levels::*;
+
 pub mod metrics;
 
 use core::cell::Cell;
-use vpb::kvstructs::{EntryRef, Header, KeyExt, Value, ValueRef};
+use vpb::kvstructs::{EntryRef, Header, KeyExt, ValueRef};
 
 struct HashReader<'a, R> {
     r: &'a mut R,

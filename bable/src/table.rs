@@ -191,6 +191,7 @@ struct CheapIndex {
     num_entries: usize,
 }
 
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct Table {
     inner: RefCounter<RawTable>,
@@ -274,6 +275,16 @@ impl Table {
     #[inline]
     pub fn in_memory(&self) -> bool {
         self.inner.in_memory()
+    }
+
+    #[inline]
+    pub fn table_size(&self) -> usize {
+        self.inner.table_size()
+    }
+
+    #[inline]
+    pub fn stale_data_size(&self) -> usize {
+        self.inner.stale_data_size()
     }
 
     #[inline]
