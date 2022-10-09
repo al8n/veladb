@@ -1,6 +1,5 @@
 use crate::KeyExt;
 
-
 /// key range
 pub struct KeyRange<L, R> {
     left: L,
@@ -21,7 +20,7 @@ impl<L: KeyExt, R: KeyExt, OL: KeyExt, OR: KeyExt> PartialEq<KeyRange<OL, OR>> f
 }
 
 impl<L, R> KeyRange<L, R> {
-    /// 
+    ///
     #[inline]
     pub fn new(left: L, right: R, size: u64) -> Self {
         Self {
@@ -32,19 +31,29 @@ impl<L, R> KeyRange<L, R> {
         }
     }
 
-    /// 
+    ///
+    pub const fn start(&self) -> &L {
+        &self.left
+    }
+
+    ///
+    pub const fn end(&self) -> &R {
+        &self.right
+    }
+
+    ///
     #[inline]
     pub const fn get_size(&self) -> u64 {
         self.size
     }
 
-    /// 
+    ///
     #[inline]
     pub fn incr_size(&mut self, size: u64) {
         self.size += size;
     }
 
-    /// 
+    ///
     #[inline]
     pub fn decr_size(&mut self, size: u64) {
         self.size -= size;
@@ -111,7 +120,7 @@ impl<L: KeyExt, R: KeyExt> KeyRange<L, R> {
         }
 
         // [other.left, other.right] ... [self.left, self.right]
-	    // If my left is greater than other right, we have no overlap.
+        // If my left is greater than other right, we have no overlap.
         let self_l = self.left.as_key_ref();
         let other_r = other.right.as_key_ref();
         if self_l > other_r {

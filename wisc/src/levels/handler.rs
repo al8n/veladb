@@ -1,8 +1,11 @@
 use std::collections::HashSet;
 
-use bable::{Table, kvstructs::{KeyExt, Value}};
 use crate::error::*;
-use indexsort::{sort_slice, search};
+use bable::{
+    kvstructs::{compare_key, KeyExt, KeyRange, KeyRef, Value, ValueRef},
+    BableIterator, Flag, Table,
+};
+use indexsort::{search, sort_slice};
 use parking_lot::RwLock;
 use vela_utils::ref_counter::RefCounter;
 
@@ -14,7 +17,6 @@ pub(super) struct LevelHandler {
     max_levels: usize,
     num_level_zero_table_stall: usize,
 }
-
 
 struct Inner {
     tables: Vec<Table>,
@@ -39,11 +41,10 @@ impl Inner {
     }
 }
 
-
 impl LevelHandler {
     #[inline]
     pub(super) fn new(level: usize, max_levels: usize, num_level_zero_table_stall: usize) -> Self {
-        Self { 
+        Self {
             level,
             max_levels,
             inner: RefCounter::new(RwLock::new(Inner::new())),
@@ -55,7 +56,6 @@ impl LevelHandler {
     pub(super) fn is_last_level(&self) -> bool {
         self.level == self.max_levels - 1
     }
-
 
     #[inline]
     pub(super) fn get_total_stale_size(&self) -> u64 {
@@ -72,7 +72,7 @@ impl LevelHandler {
         let mut inner = self.inner.write();
 
         let to_del_map = to_del.iter().map(|t| t.id()).collect::<HashSet<_>>();
-        
+
         let mut total_size = inner.total_size;
         let mut total_stale_size = inner.total_stale_size;
         inner.tables.retain(|t| {
@@ -92,8 +92,8 @@ impl LevelHandler {
     /// Replace `tables[left..right]` with newTables. Note this EXCLUDES tables[right].
     pub(super) fn replace_tables(&self, to_del: &[Table], to_add: &[Table]) {
         // Need to re-search the range of tables in this level to be replaced as other goroutines might
-	    // be changing it as well.  (They can't touch our tables, but if they add/remove other tables,
-	    // the indices get shifted around.)
+        // be changing it as well.  (They can't touch our tables, but if they add/remove other tables,
+        // the indices get shifted around.)
         let mut inner = self.inner.write();
 
         let to_del_map = to_del.iter().map(|t| t.id()).collect::<HashSet<_>>();
@@ -111,13 +111,11 @@ impl LevelHandler {
                 true
             }
         });
-        inner.tables.extend(
-            to_add.iter().map(|t| {
-                add_total_size += t.table_size() as u64;
-                add_total_stale_size += t.stale_data_size() as u64;
-                t.clone()
-            })
-        );
+        inner.tables.extend(to_add.iter().map(|t| {
+            add_total_size += t.table_size() as u64;
+            add_total_stale_size += t.stale_data_size() as u64;
+            t.clone()
+        }));
 
         inner.total_size = total_size;
         inner.total_size += add_total_size;
@@ -140,11 +138,11 @@ impl LevelHandler {
     pub(super) fn add_table(&self, t: &Table) {
         let mut inner = self.inner.write();
         inner.total_size += t.table_size() as u64;
-        inner.total_stale_size += t.stale_data_size() as u64; 
+        inner.total_stale_size += t.stale_data_size() as u64;
         inner.tables.push(t.clone());
     }
 
-    /// Sorts tables in [`LevelHandler`] based on `table.smallest`. 
+    /// Sorts tables in [`LevelHandler`] based on `table.smallest`.
     /// Normally it should be called after all addTable calls.
     #[inline]
     pub(super) fn sort_tables(&self) {
@@ -171,46 +169,104 @@ impl LevelHandler {
         inner.total_size = t.table_size() as u64;
         inner.total_stale_size = t.stale_data_size() as u64;
         inner.tables.push(t.clone());
-        
+
         true
     }
 
-
-    pub(super) fn get_table_for_key(&self, key: impl KeyExt) -> Option<Vec<Table>> {
+    pub(super) fn get_table_for_key(&self, key: KeyRef) -> Vec<Table> {
         let inner = self.inner.read();
         if self.level == 0 {
             // For level 0, we need to check every table. Remember to make a copy as s.tables may change
-		    // once we exit this function, and we don't want to lock s.tables while seeking in tables.
-		    // CAUTION: Reverse the tables.
+            // once we exit this function, and we don't want to lock s.tables while seeking in tables.
+            // CAUTION: Reverse the tables.
             let mut out = inner.tables.clone();
             out.reverse();
-            return Some(out);
+            return out;
         }
 
         // For level >= 1, we can do a binary search as key range does not overlap.
-        let idx = search(inner.tables.len(), | i| {
+        let idx = search(inner.tables.len(), |i| {
             inner.tables[i].biggest().as_key_ref() >= key.as_key_ref()
         });
 
         if idx >= inner.tables.len() {
             // Given key is strictly > than every element we have.
-            return None;
+            return Vec::new();
         }
 
-        Some(vec![inner.tables[idx].clone()])
+        vec![inner.tables[idx].clone()]
     }
 
+    /// Returns value for a given key or the key after that. If not found, return `None`.
+    pub(super) fn get(&self, key: impl KeyExt) -> Result<Option<Value>> {
+        let key = key.as_key_ref();
+        let tables = self.get_table_for_key(key);
 
-    /// Returns value for a given key or the key after that. If not found, return nil.
-    pub(super) fn get(&self, key: impl KeyExt) -> Result<Value> {
-        todo!()
+        let key_no_ts = key.parse_key();
+        let hash = bable::bloom::hash(key_no_ts);
+        let mut max_vs: Option<Value> = None;
+        for table in tables {
+            if table.contains_hash(hash) {
+                // TODO: metrics
+                continue;
+            }
+
+            let mut iter = table.iter(Flag::NONE);
+
+            // TODO: metrics
+            iter.seek(key);
+
+            if !iter.valid() {
+                continue;
+            }
+
+            if let Some(ikey) = iter.key() {
+                if ikey.same_key(key) {
+                    let version = ikey.parse_timestamp();
+                    if let Some(max_val) = &mut max_vs {
+                        let val = iter.val().unwrap().to_value();
+                        if max_val.get_version() < version {
+                            *max_val = val.set_version(version);
+                        }
+                    } else {
+                        max_vs = Some(iter.val().unwrap().to_value());
+                    }
+                }
+            }
+        }
+
+        Ok(max_vs)
     }
 
     pub(super) fn get_tables(&self) -> Vec<Table> {
         todo!()
     }
 
-    pub(super) fn overlapping_tables<K1, K2>(&self, kr: ) -> (usize, usize) {
+    pub(super) fn overlapping_tables<L: KeyExt, R: KeyExt>(
+        &self,
+        kr: KeyRange<L, R>,
+    ) -> (usize, usize) {
+        let left = kr.start();
+        let right = kr.end();
+        if left.as_bytes().is_empty() || right.as_bytes().is_empty() {
+            return (0, 0);
+        }
 
+        let inner = self.inner.read();
+        let left_idx = search(inner.tables.len(), |i| {
+            match compare_key(left.as_key_ref(), inner.tables[i].biggest()) {
+                core::cmp::Ordering::Less | core::cmp::Ordering::Equal => true,
+                core::cmp::Ordering::Greater => false,
+            }
+        });
+
+        let right_idx = search(inner.tables.len(), |i| {
+            match compare_key(right.as_key_ref(), inner.tables[i].smallest()) {
+                core::cmp::Ordering::Less => true,
+                core::cmp::Ordering::Equal | core::cmp::Ordering::Greater => false,
+            }
+        });
+
+        (left_idx, right_idx)
     }
 }

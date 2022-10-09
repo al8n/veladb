@@ -14,6 +14,9 @@ pub use vlog::*;
 mod oracle;
 pub use oracle::*;
 
+mod iterator;
+pub use iterator::*;
+
 mod mem_table;
 pub use mem_table::*;
 

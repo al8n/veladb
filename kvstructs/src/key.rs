@@ -485,8 +485,8 @@ pub trait KeyExt {
     /// All keys should have timestamp.
     #[inline]
     fn compare_key(&self, other: impl KeyExt) -> Ordering {
-        let me = self.as_bytes();
-        let other = other.as_bytes();
+        let me = self.parse_key();
+        let other = other.parse_key();
         compare_key_in(me, other)
     }
 
