@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
-use crate::error::*;
+use crate::{error::*, IteratorOptions};
 use bable::{
     kvstructs::{compare_key, KeyExt, KeyRange, KeyRef, Value, ValueRef},
-    BableIterator, Flag, Table,
+    BableIterator, Flag, Table, TableIterator, ConcatTableIterator,
 };
 use indexsort::{search, sort_slice};
 use parking_lot::RwLock;
@@ -238,8 +238,42 @@ impl LevelHandler {
         Ok(max_vs)
     }
 
-    pub(super) fn get_tables(&self) -> Vec<Table> {
-        todo!()
+    /// Returns an array of iterators, for merging.
+    pub(super) fn iterators(&self, opt: &IteratorOptions) -> Vec<TableIterator> {
+        let inner = self.inner.read();
+        let topt = if opt.reverse { Flag::REVERSED } else { Flag::NONE };
+        if self.level == 0 {
+            // Remember to add in reverse order!
+		    // The newer table at the end of s.tables should be added first as it takes precedence.
+		    // Level 0 tables are not in key sorted order, so we need to consider them one by one.
+            return inner.tables.iter().filter_map(|t| {
+                if opt.pick_table(t) {
+                    Some(TableIterator::from(t.iter(topt)))
+                } else {
+                    None
+                }
+            }).collect();
+        }
+        
+        let tables = opt.pick_tables(&inner.tables);
+        if tables.is_empty() {
+            return Vec::new();
+        }
+        vec![TableIterator::from(ConcatTableIterator::new(tables, topt))]
+    }
+
+    pub(super) fn get_tables(&self, opt: &IteratorOptions) -> Vec<Table> {
+        if opt.reverse {
+            panic!("wisc: invalid option for get_tables");
+        }
+
+        // Typically this would only be called for the last level.
+        let inner = self.inner.read();
+        if self.level == 0 {
+            return inner.tables.iter().filter(|t| opt.pick_table(t)).cloned().collect();
+        }
+
+        opt.pick_tables(&inner.tables)
     }
 
     pub(super) fn overlapping_tables<L: KeyExt, R: KeyExt>(

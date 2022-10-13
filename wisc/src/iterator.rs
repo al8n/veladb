@@ -1,4 +1,4 @@
-use bable::{bytes::Bytes, kvstructs::KeyExt};
+use bable::{bytes::Bytes, kvstructs::KeyExt, Table};
 
 pub struct IteratorOptions {
     /// The number of KV pairs to prefetch while iterating.
@@ -50,5 +50,104 @@ impl IteratorOptions {
         }
 
         key.cmp(&self.prefix)
+    }
+
+    #[inline]
+    pub(crate) fn pick_table(&self, t: &Table) -> bool {
+        // Ignore this table if its max version is less than the sinceTs.
+        if t.max_version() < self.since_timpestamp {
+            return false;
+        }
+
+        if self.prefix.is_empty() {
+            return true;
+        }
+
+        if matches!(self.compare_to_prefix(t.smallest()), core::cmp::Ordering::Greater) {
+            return false;
+        }
+
+        if matches!(self.compare_to_prefix(t.biggest()), core::cmp::Ordering::Less) {
+            return false;
+        }
+
+        // Bloom filter lookup would only work if opt.Prefix does NOT have the read
+	    // timestamp as part of the key.
+        if self.prefix_is_key && t.contains_hash(bable::bloom::hash(&self.prefix)) {
+            return false;
+        }
+
+        true
+    }
+
+    pub(crate) fn pick_tables<'a>(&self, all_tables: &'a [Table]) -> Vec<Table> {
+        if self.prefix.is_empty() {
+           return self.filter_tables(all_tables);
+        }
+
+        let s_idx = indexsort::search(all_tables.len(), |i| {
+            !matches!(self.compare_to_prefix(all_tables[i].biggest()), core::cmp::Ordering::Less)
+        });
+
+        if s_idx == all_tables.len() {
+            return Vec::new();
+        }
+
+        let filtered = &all_tables[s_idx..];
+        if !self.prefix_is_key {
+            let e_idx = indexsort::search(filtered.len(), |i| {
+                matches!(self.compare_to_prefix(filtered[i].smallest()), core::cmp::Ordering::Greater)
+            });
+
+            return self.filter_tables(&filtered[..e_idx]);
+        }
+
+        // self.prefix_is_key == true. This code is optimizing for opt.prefix_is_key part.
+        let hash = bable::bloom::hash(&self.prefix);
+        
+        let return_all = self.since_timpestamp == 0;
+
+        let mut vec = vec![];
+        for t in filtered {
+            // When we encounter the first table whose smallest key is higher than self.prefix, we can
+		    // stop. This is an IMPORTANT optimization, just considering how often we call
+		    // NewKeyIterator.
+            if matches!(self.compare_to_prefix(t.smallest()), core::cmp::Ordering::Greater) {
+                // if table.smallest() > self.prefix, then this and all tables after this can be ignored.
+                break;
+            }
+
+            // self.prefix is actually the key. So, we can run bloom filter checks
+		    // as well.
+            if t.contains_hash(hash) {
+                continue;
+            }
+
+            if return_all {
+                vec.push(t.clone());
+                continue;
+            }
+
+           
+            if t.max_version() >= self.since_timpestamp {
+                vec.push(t.clone());
+            }
+        }
+
+        vec
+    }
+
+    fn filter_tables<'a>(&self, tables: impl IntoIterator<Item = &'a Table>) -> Vec<Table> {
+        if self.since_timpestamp == 0 {
+            return tables.into_iter().cloned().collect();
+        }
+
+        tables.into_iter().filter_map(|t| {
+            if t.max_version() >= self.since_timpestamp {
+                Some(t.clone())
+            } else {
+                None
+            }
+        }).collect()
     }
 }
