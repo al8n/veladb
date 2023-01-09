@@ -1,22 +1,26 @@
 [package]
 name = "zuffer"
 version = "0.1.1"
-edition = "2021"
 repository = "https://github.com/al8n/veladb/tree/main/zuffer"
 description = "A mmap file based buffer implementation."
-license = "MIT/Apache-2.0"
 keywords = ["buffer", "mmap", "file", "memmap", "memmap2"]
 category = ["data-structures"]
+
+# Workspace inherited keys
+authors = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+rust-version = { workspace = true }
 
 [features]
 default = ["std"]
 std = []
 
 [dependencies]
-fmmap = "0.3"
-thiserror = "1"
-rand = "0.8"
-indexsort = "0.1"
+crabmole = { workspace = true, features = ["sort"] }
+fmmap = { workspace = true } 
+thiserror = { workspace = true }
+rand = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.4"

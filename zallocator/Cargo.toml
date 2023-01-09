@@ -27,20 +27,20 @@ threadpool = ["crossbeam-channel"]
 nightly = ["crossbeam-utils/nightly"]
 
 [dependencies]
-async-channel = { version = "1.7", optional = true }
-async-io = { version = "1.8", optional = true }
-crossbeam-channel = { version = "0.5", optional = true }
-crossbeam-queue = { version = "0.3", default-features = false, features = ["alloc"] }
-crossbeam-utils = { version = "0.8", default-features = false }
-futures = { version = "0.3", optional = true }
-getrandom = { version = "0.2", optional = true }
-hashbrown = { version = "0.12", optional = true }
-lazy_static = { version = "1.4", optional = true, default-features = false }
-parking_lot = { version = "0.12", optional = true }
-pollster = { version = "0.2", optional = true }
-rand = { version = "0.8", optional = true, default-features = false }
-spin = { version = "0.9", optional = true }
-triomphe = { version = "0.1", default-features = false }
+async-channel = { optional = true, workspace = true }
+async-io = { optional = true, workspace = true }
+crossbeam-channel = { optional = true, workspace = true }
+crossbeam-queue = { workspace = true }
+crossbeam-utils = { workspace = true }
+futures = { optional = true, workspace = true }
+getrandom = { optional = true, workspace = true }
+hashbrown = { optional = true, workspace = true }
+lazy_static = { optional = true, workspace = true }
+parking_lot = { optional = true, workspace = true }
+pollster = { optional = true, workspace = true }
+rand = { optional = true, workspace = true }
+spin = { optional = true, workspace = true }
+triomphe = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.4"

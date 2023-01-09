@@ -34,4 +34,4 @@ lz4 = ["vpb/lz4"]
 lz4-std = ["vpb/lz4-std"]
 
 [dependencies]
-vpb = { version = "0.1.0", path = "../vpb" }
+vpb = { workspace = true }

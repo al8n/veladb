@@ -20,15 +20,15 @@ closer = ["std", "crossbeam-channel", "wg", "parking_lot", "arc-swap"]
 alloc = []
 
 [dependencies]
-arc-swap = { version = "1.5", optional = true }
-triomphe = { version = "0.1", default-features = false, optional = true }
-hashbrown = { version = "0.12", optional = true, default-features = false }
-atomic = { version = "0.5",  default-features = false, optional = true }
-crossbeam-channel = { version = "0.5", optional = true }
-crossbeam-utils = { version = "0.8", optional = true }
-wg = { version = "0.3", optional = true }
-parking_lot = { version = "0.12", optional = true }
-scopeguard = { version = "1.1", optional = true }
+arc-swap = { optional = true, workspace = true }
+triomphe = { optional = true, workspace = true }
+hashbrown = { optional = true, workspace = true }
+atomic = { optional = true, workspace = true }
+crossbeam-channel = { optional = true, workspace = true }
+crossbeam-utils = { optional = true, workspace = true }
+wg = { optional = true, workspace = true }
+parking_lot = { optional = true, workspace = true }
+scopeguard = { optional = true, workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true

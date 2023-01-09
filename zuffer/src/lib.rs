@@ -651,7 +651,7 @@ impl<'a> SortHelper<'a> {
         }
 
         // We are sorting the slices pointed to by s.small offsets, but only moving the offsets around.
-        indexsort::sort_slice(&mut self.small, |small, i, j| {
+        crabmole::sort::sort_slice(&mut self.small, |small, i, j| {
             let (left, _) = self.original.slice(small[i]);
             let (right, _) = self.original.slice(small[j]);
             less(left, right)
@@ -935,7 +935,7 @@ mod tests {
             compare(&buffer, &exp);
 
             eprintln!("Sorting using sort.slice");
-            indexsort::sort_slice(&mut exp, |data, i, j| {
+            crabmole::sort::sort_slice(&mut exp, |data, i, j| {
                 data[i].as_slice().cmp(data[j].as_slice()) == core::cmp::Ordering::Less
             });
 

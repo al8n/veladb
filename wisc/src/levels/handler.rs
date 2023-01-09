@@ -3,9 +3,9 @@ use std::collections::HashSet;
 use crate::{error::*, IteratorOptions};
 use bable::{
     kvstructs::{compare_key, KeyExt, KeyRange, KeyRef, Value, ValueRef},
-    BableIterator, Flag, Table, TableIterator, ConcatTableIterator,
+    BableIterator, ConcatTableIterator, Flag, Table, TableIterator,
 };
-use indexsort::{search, sort_slice};
+use crabmole::sort::{search, sort_slice};
 use parking_lot::RwLock;
 use vela_utils::ref_counter::RefCounter;
 
@@ -241,20 +241,28 @@ impl LevelHandler {
     /// Returns an array of iterators, for merging.
     pub(super) fn iterators(&self, opt: &IteratorOptions) -> Vec<TableIterator> {
         let inner = self.inner.read();
-        let topt = if opt.reverse { Flag::REVERSED } else { Flag::NONE };
+        let topt = if opt.reverse {
+            Flag::REVERSED
+        } else {
+            Flag::NONE
+        };
         if self.level == 0 {
             // Remember to add in reverse order!
-		    // The newer table at the end of s.tables should be added first as it takes precedence.
-		    // Level 0 tables are not in key sorted order, so we need to consider them one by one.
-            return inner.tables.iter().filter_map(|t| {
-                if opt.pick_table(t) {
-                    Some(TableIterator::from(t.iter(topt)))
-                } else {
-                    None
-                }
-            }).collect();
+            // The newer table at the end of s.tables should be added first as it takes precedence.
+            // Level 0 tables are not in key sorted order, so we need to consider them one by one.
+            return inner
+                .tables
+                .iter()
+                .filter_map(|t| {
+                    if opt.pick_table(t) {
+                        Some(TableIterator::from(t.iter(topt)))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
         }
-        
+
         let tables = opt.pick_tables(&inner.tables);
         if tables.is_empty() {
             return Vec::new();
@@ -270,7 +278,12 @@ impl LevelHandler {
         // Typically this would only be called for the last level.
         let inner = self.inner.read();
         if self.level == 0 {
-            return inner.tables.iter().filter(|t| opt.pick_table(t)).cloned().collect();
+            return inner
+                .tables
+                .iter()
+                .filter(|t| opt.pick_table(t))
+                .cloned()
+                .collect();
         }
 
         opt.pick_tables(&inner.tables)

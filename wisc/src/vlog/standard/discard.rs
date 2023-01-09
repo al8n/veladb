@@ -1,6 +1,6 @@
 use crate::error::*;
+use crabmole::sort::IndexSort;
 use fmmap::{MmapFileExt, MmapFileMut, MmapFileMutExt, Options};
-use indexsort::IndexSort;
 use parking_lot::Mutex;
 use vela_utils::ref_counter::RefCounter;
 
@@ -139,7 +139,8 @@ impl DiscardStats {
     pub fn update(&self, fidu: u32, discard: i64) -> i64 {
         let fid = fidu as u64;
         let mut inner = self.inner.lock();
-        let mut idx = indexsort::search(inner.next_empty_slot, |slot| inner.get(16 * slot) >= fid);
+        let mut idx =
+            crabmole::sort::search(inner.next_empty_slot, |slot| inner.get(16 * slot) >= fid);
 
         if idx < inner.next_empty_slot && inner.get(16 * idx) == fid {
             let off = idx * 16 + 8;

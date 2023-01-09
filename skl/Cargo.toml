@@ -24,11 +24,11 @@ js = ["getrandom/js"]
 loom = "0.5.6"
 
 [dependencies]
-crossbeam-utils = { version = "0.8", default-features = false }
-getrandom = { version = "0.2", optional = true }
-kvstructs = { version = "0.1.1", path = "../kvstructs", default-features = false }
-rand = { version = "0.8", default-features = false, features = ["getrandom"] }
-vela-utils = { version = "0.1", path = "../utils", default-features = false, features = ["ref_counter"] }
+crossbeam-utils = { workspace = true }
+getrandom = { optional = true, workspace = true }
+kvstructs = { workspace = true }
+rand = { workspace = true, features = ["getrandom"] }
+vela-utils = { workspace = true, features = ["ref_counter"] }
 
 [dev-dependencies]
 criterion = "0.4"

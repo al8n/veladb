@@ -13,20 +13,20 @@ std = ["fmmap", "parking_lot", "vpb/std", "vpb/aes-std", "vela-utils/std", "vela
 metrics = []
 
 [dependencies]
-bable = { version = "0.1", path = "../bable", default-features = false }
-crossbeam-channel = { version = "0.5", optional = true }
-fmmap = { version = "0.3", optional = true }
-indexsort = "0.1"
-lazy_static = { version = "1.4", optional = true, default-features = false }
-parking_lot = { version = "0.12", optional = true }
-rand = { version = "0.8", default-features = false }
-rustix = { version = "0.35", optional = true, features = ["fs"] }
-skl = { version = "0.3", path = "../skl", default-features = false, features = ["alloc"] }
-tracing = { version = "0.1", optional = true, default-features = false }
-vela-options = { version = "0.0.0", path = "../options" }
-vela-utils = { version = "0.1", path = "../utils", default-features = false, features = ["ref_counter"] }
-vela-traits = { version = "0.0.0", path = "../traits" }
-vpb = { version = "0.1", path = "../vpb", default-features = false, features = ["aes"] }
-scopeguard = "1.1"
+bable = { workspace = true }
+crabmole = { workspace = true, features = ["sort"] }
+crossbeam-channel = {optional = true, workspace = true }
+fmmap = { workspace = true, optional = true }
+lazy_static = { optional = true, workspace = true }
+parking_lot = { optional = true, workspace = true }
+rand = { workspace = true }
+rustix = { optional = true, workspace = true, features = ["fs"] }
+skl = { workspace = true, features = ["alloc"] }
+tracing = { optional = true, workspace = true }
+vela-options = { workspace = true }
+vela-utils = { workspace = true, features = ["ref_counter"] }
+vela-traits = { workspace = true }
+vpb = { workspace = true, features = ["aes"] }
+scopeguard = { workspace = true }
 
 [dev-dependencies]
