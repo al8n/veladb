@@ -9,11 +9,12 @@ use crabmole::sort::{search, sort_slice};
 use parking_lot::RwLock;
 use vela_utils::ref_counter::RefCounter;
 
+#[derive(Clone)]
 pub(super) struct LevelHandler {
     inner: RefCounter<RwLock<Inner>>,
 
     // The following are initialized once and const.
-    level: usize,
+    pub(crate) level: usize,
     max_levels: usize,
     num_level_zero_table_stall: usize,
 }

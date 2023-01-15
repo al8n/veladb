@@ -376,8 +376,6 @@ impl Inner {
 unsafe impl Send for Inner {}
 unsafe impl Sync for Inner {}
 
-impl FixedSKL {}
-
 impl FixedSKL {
     /// Create a new skiplist according to the given capacity
     ///

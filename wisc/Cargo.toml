@@ -17,6 +17,7 @@ bable = { workspace = true }
 crabmole = { workspace = true, features = ["sort"] }
 crossbeam-channel = {optional = true, workspace = true }
 fmmap = { workspace = true, optional = true }
+kvstructs = { workspace = true }
 lazy_static = { optional = true, workspace = true }
 parking_lot = { optional = true, workspace = true }
 rand = { workspace = true }

@@ -1,6 +1,7 @@
 use crate::KeyExt;
 
 /// key range
+#[derive(Clone)]
 pub struct KeyRange<L, R> {
     left: L,
     right: R,

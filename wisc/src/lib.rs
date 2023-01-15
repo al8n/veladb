@@ -25,6 +25,9 @@ pub use levels::*;
 
 pub mod metrics;
 
+mod compaction;
+pub use compaction::*;
+
 use core::cell::Cell;
 use vpb::kvstructs::{EntryRef, Header, KeyExt, ValueRef};
 
